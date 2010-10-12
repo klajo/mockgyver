@@ -1,0 +1,8 @@
+%% Tell emacs to use -*- erlang -*- mode for this file
+{application,
+ mockgyver,
+ [{description,"Mocking library"},
+  {vsn,"0.1"},
+  {registered,[]},
+  {applications,[kernel,stdlib,syntax_tools,parse_trans]},
+  {env,[]}]}.
