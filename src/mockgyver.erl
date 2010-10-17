@@ -334,8 +334,8 @@ mk_mocked_func(Mod, OrigMod, {F, A}) ->
     Body =[erl_syntax:case_expr(
              mk_call(mockgyver, get_action,
                      [erl_syntax:tuple([erl_syntax:abstract(Mod),
-                                       erl_syntax:abstract(F),
-                                       erl_syntax:abstract(A)])]),
+                                        erl_syntax:abstract(F),
+                                        erl_syntax:abstract(A)])]),
              [erl_syntax:clause([erl_syntax:atom(undefined)],
                                 none,
                                 [mk_call(OrigMod, F, Args)]),
