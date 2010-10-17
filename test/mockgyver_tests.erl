@@ -4,6 +4,8 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 -include("../include/mockgyver.hrl").
 
+-compile(export_all).
+
 %% was_called_test() ->
 %%     mockgyver:start_link(),
 %%     mockgyver:start_session([{x, test, 1}]),
@@ -19,12 +21,11 @@
 mock_test_() ->
     [fun() -> ?MOCK(T) end || T <- [fun parse/0]].
                           
-
 parse() -> 
     %%    ?WHEN(x:test(1) -> 42),
-    x:test(1),
-    x:test(2),
-    x:test(2),
-    ?WAS_CALLED(x:test(1), once),
-    ?WAS_CALLED(x:test(2), {times, 2}),
-    ?WAS_CALLED(x:test(_), {times, 3}).
+    1 = mockgyver_dummy:return_arg(1),
+    2 = mockgyver_dummy:return_arg(2),
+    2 = mockgyver_dummy:return_arg(2),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(1), once),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(2), {times, 2}),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_), {times, 3}).
