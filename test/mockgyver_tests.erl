@@ -27,11 +27,11 @@ mock_test_() ->
           fun returns_other_value/0,
           fun can_change_return_value/0,
           fun inherits_variables_from_outer_scope/0,
-          fun can_use_params/0],
+          fun can_use_params/0,
+          fun can_use_multi_clause_functions/0],
     [fun() -> ?MOCK(T) end || T <- Ts].
 
 traces_single_arg() ->
-    %%    ?WHEN(x:test(1) -> 42),
     1 = mockgyver_dummy:return_arg(1),
     2 = mockgyver_dummy:return_arg(2),
     2 = mockgyver_dummy:return_arg(2),
@@ -40,7 +40,6 @@ traces_single_arg() ->
     ?WAS_CALLED(mockgyver_dummy:return_arg(_), {times, 3}).
 
 traces_multi_args() ->
-    %%    ?WHEN(x:test(1) -> 42),
     {a, 1} = mockgyver_dummy:return_arg(a, 1),
     {a, 2} = mockgyver_dummy:return_arg(a, 2),
     {b, 2} = mockgyver_dummy:return_arg(b, 2),
@@ -79,3 +78,9 @@ inherits_variables_from_outer_scope() ->
 can_use_params() ->
     ?WHEN(mockgyver_dummy:return_arg(N) -> N+1),
     2 = mockgyver_dummy:return_arg(1).
+
+can_use_multi_clause_functions() ->
+    ?WHEN(mockgyver_dummy:return_arg(N) when N >= 0 -> positive;
+          mockgyver_dummy:return_arg(_N)            -> negative),
+    positive = mockgyver_dummy:return_arg(1),
+    negative = mockgyver_dummy:return_arg(-1).

@@ -69,14 +69,14 @@ rewrite_when_stmts(Forms, Ctxt) ->
 
 rewrite_when_stmts_2(Type, Form0, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form0) of
-        {true, #m_when{m=M, f=F, a=A0, action=ActionExprs}} ->
+        {true, #m_when{m=M, f=F, action=ActionFun}} ->
             Befores = [],
             Form = erl_syntax:application(
                      erl_syntax:abstract(mockgyver),
                      erl_syntax:abstract(set_action),
                      [erl_syntax:tuple([erl_syntax:abstract(M),
                                         erl_syntax:abstract(F),
-                                        mk_fun_form(A0, ActionExprs)])]),
+                                        ActionFun])]),
             Afters = [],
             {Befores, Form, Afters, false, Acc};
         _ ->
@@ -88,7 +88,6 @@ pp(Form) ->
 
 mk_fun_form(Args, ActionExprs) ->
     erl_syntax:fun_expr([erl_syntax:clause(Args, none, ActionExprs)]).
-    
 
 find_mfas_to_mock(Forms, Ctxt) ->
     lists:usort(
@@ -102,7 +101,7 @@ find_mfas_to_mock_f(Type, Form, _Ctxt, Acc) ->
     end.
 
 when_to_mfa(#m_when{m=M, f=F, a=A}) ->
-    {M, F, length(A)}.
+    {M, F, A}.
 
 %%------------------------------------------------------------
 %% was called statements
@@ -167,16 +166,44 @@ analyze_init_expr(Expr) ->
     #m_init{exec_fun=Expr}.
 
 analyze_when_expr(Expr) ->
-    %% The first clause of the if expression is all we want, the sole
-    %% purpose of the entire if expression is to let us write
-    %% ?WHEN(m:f(A) -> some_result).
-    [Clause | _] = erl_syntax:if_expr_clauses(Expr),
-    Disj = erl_syntax:clause_guard(Clause),
-    [Conj] = erl_syntax:disjunction_body(Disj),
-    [Call] = erl_syntax:conjunction_body(Conj),
+    %% The sole purpose of the entire if expression is to let us write
+    %%     ?WHEN(m:f(_) -> some_result).
+    %% or
+    %%     ?WHEN(m:f(1) -> some_result;).
+    %%     ?WHEN(m:f(2) -> some_other_result).
+    Clauses0 = erl_syntax:case_expr_clauses(Expr),
+    {M, F, A} = ensure_all_clauses_implement_the_same_function(Clauses0),
+    Clauses = lists:map(fun(Clause) ->
+                                [Call | _] = erl_syntax:clause_patterns(Clause),
+                                {_M, _F, Args} = analyze_application(Call),
+                                Guard = erl_syntax:clause_guard(Clause),
+                                Body  = erl_syntax:clause_body(Clause),
+                                erl_syntax:clause(Args, Guard, Body)
+                        end,
+                        Clauses0),
+    ActionFun = erl_syntax:fun_expr(Clauses),
+    #m_when{m=M, f=F, a=A, action=ActionFun}.
+
+ensure_all_clauses_implement_the_same_function(Clauses) ->
+    lists:foldl(fun(Clause, undefined) ->
+                        get_when_call_sig(Clause);
+                   (Clause, {M, F, A}=MFA) ->
+                        case get_when_call_sig(Clause) of
+                            {M, F, A} ->
+                                MFA;
+                            OtherMFA ->
+                                erlang:error({when_expr_function_mismatch,
+                                              {expected, MFA},
+                                              {got, OtherMFA}})
+                        end
+                end,
+                undefined,
+                Clauses).
+
+get_when_call_sig(Clause) ->
+    [Call | _] = erl_syntax:clause_patterns(Clause),
     {M, F, A} = analyze_application(Call),
-    Result = erl_syntax:clause_body(Clause),
-    #m_when{m=M, f=F, a=A, action=Result}.
+    {M, F, length(A)}.
 
 analyze_was_called_expr(Form) ->
     [Call, Criteria] = erl_syntax:tuple_elements(Form),
