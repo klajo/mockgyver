@@ -69,21 +69,25 @@ rewrite_when_stmts(Forms, Ctxt) ->
 
 rewrite_when_stmts_2(Type, Form0, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form0) of
-        {true, #m_when{action=ActionExprs} = When} ->
+        {true, #m_when{m=M, f=F, a=A0, action=ActionExprs}} ->
             Befores = [],
             Form = erl_syntax:application(
                      erl_syntax:abstract(mockgyver),
                      erl_syntax:abstract(set_action),
-                     [erl_syntax:abstract(when_to_mfa(When)),
-                      mk_arity_0_fun_form(ActionExprs)]),
+                     [erl_syntax:tuple([erl_syntax:abstract(M),
+                                        erl_syntax:abstract(F),
+                                        mk_fun_form(A0, ActionExprs)])]),
             Afters = [],
             {Befores, Form, Afters, false, Acc};
         _ ->
             {Form0, true, Acc}
     end.
 
-mk_arity_0_fun_form(ActionExprs) ->
-    erl_syntax:fun_expr([erl_syntax:clause([], none, ActionExprs)]).
+pp(Form) ->
+    io:format(user, "~s~n", [erl_pp:form(erl_syntax:revert(Form))]).
+
+mk_fun_form(Args, ActionExprs) ->
+    erl_syntax:fun_expr([erl_syntax:clause(Args, none, ActionExprs)]).
     
 
 find_mfas_to_mock(Forms, Ctxt) ->

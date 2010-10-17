@@ -21,7 +21,7 @@
 
 -export([start_session/1]).
 
--export([get_action/1, set_action/2]).
+-export([get_action/1, set_action/1]).
 -export([was_called/1, was_called/2]).
 
 %% gen_server callbacks
@@ -66,8 +66,8 @@ exec(MockMFAs, TraceMFAs, Fun) ->
 get_action(MFA) ->
     call({get_action, MFA}).
 
-set_action(MFA, ActionFun) ->
-    call({set_action, MFA, ActionFun}).
+set_action(MFA) ->
+    call({set_action, MFA}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -136,8 +136,8 @@ handle_call({start_session, TraceMFAs, Pid}, _From, State0) ->
 handle_call({get_action, MFA}, _From, State) ->
     ActionFun = i_get_action(MFA, State),
     {reply, ActionFun, State};
-handle_call({set_action, MFA, ActionFun}, _From, State0) ->
-    State = i_set_action(MFA, ActionFun, State0),
+handle_call({set_action, MFA}, _From, State0) ->
+    State = i_set_action(MFA, State0),
     {reply, ok, State};
 handle_call({was_called, MFA, Criteria}, _From, State) ->
     Reply = i_was_called(MFA, Criteria, State),
@@ -245,18 +245,22 @@ i_was_called(MFA, Criteria, State) ->
     NumMatches = count_matches(MFA, State),
     check_criteria(Criteria, NumMatches).
 
-count_matches({M, F, A}, #state{calls=Calls}) ->
-    lists:foldl(fun(#call{m=M0, f=F0, a=A0}, Num) when M0 =:= M, F0 =:= F ->
-%                        io:format(user, "--> ~p ~~ ~p? --> ~p~n", [A0, A, erlang:match_spec_test(A0, A, trace)]),
-                        case erlang:match_spec_test(A0, A, trace) of
-                            {ok, true,  _Warnings, _Flags} -> Num+1;
-                            {ok, false, _Warnings, _Flags} -> Num
-                        end;
-                   (_, Num) ->
-                        Num
+count_matches({_M, _F, _A}=SpecMFA, #state{calls=Calls}) ->
+    lists:foldl(fun(#call{m=M0, f=F0, a=A0}, Num) ->
+                        case is_match({M0,F0,A0}, SpecMFA) of
+                            true  -> Num+1;
+                            false -> Num
+                        end
                 end,
                 0,
                 Calls).
+
+is_match({CallM, CallF, CallA}, {SpecM, SpecF, SpecA}) when CallM == SpecM,
+                                                            CallF == SpecF -> 
+    {ok, IsMatch, _Warns, _Flags} = erlang:match_spec_test(CallA, SpecA, trace),
+    IsMatch;
+is_match(_Call, _Spec) ->
+    false.
 
 check_criteria(once, 1)                      -> ok;
 check_criteria({at_least, N}, X) when X >= N -> ok;
@@ -273,7 +277,9 @@ i_get_action(MFA, #state{actions=Actions}) ->
         false                            -> undefined
     end.
 
-i_set_action(MFA, ActionFun, #state{actions=Actions0} = State) ->
+i_set_action({M, F, ActionFun}, #state{actions=Actions0} = State) ->
+    {arity, A} = erlang:fun_info(ActionFun, arity),
+    MFA = {M, F, A},
     Actions = lists:keystore(MFA, #action.mfa, Actions0,
                              #action{mfa=MFA, func=ActionFun}),
     State#state{actions=Actions}.
@@ -321,7 +327,7 @@ mk_mocking_mod(Mod, OrigMod, ExportedFAs) ->
                                     [erl_syntax:abstract(Mod)])]
               ++ mk_mocked_funcs(Mod, OrigMod, ExportedFAs)),
     Forms = [erl_syntax:revert(Form) || Form <- Forms0],
-%%    [io:format(user, "~s~n", [erl_pp:form(Form)]) || Form <- Forms],
+    %% [io:format(user, "~s~n", [erl_pp:form(Form)]) || Form <- Forms],
     {ok, Mod, Bin} = compile:forms(Forms, [report, export_all]),
     {module, Mod} = code:load_binary(Mod, "mock", Bin).
 
@@ -341,7 +347,7 @@ mk_mocked_func(Mod, OrigMod, {F, A}) ->
                                 [mk_call(OrigMod, F, Args)]),
               erl_syntax:clause([erl_syntax:variable('ActionFun')],
                                 none,
-                                [mk_call('ActionFun', [])])])],
+                                [mk_call('ActionFun', Args)])])],
     erl_syntax:function(
       erl_syntax:abstract(F),
       [erl_syntax:clause(Args, none, Body)]).

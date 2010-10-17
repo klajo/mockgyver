@@ -26,7 +26,8 @@ mock_test_() ->
           fun traces_in_separate_process/0,
           fun returns_other_value/0,
           fun can_change_return_value/0,
-          fun inherits_variables_from_outer_scope/0],
+          fun inherits_variables_from_outer_scope/0,
+          fun can_use_params/0],
     [fun() -> ?MOCK(T) end || T <- Ts].
 
 traces_single_arg() ->
@@ -59,13 +60,13 @@ returns_other_value() ->
     1  = mockgyver_dummy:return_arg(1),
     ?WHEN(mockgyver_dummy:return_arg(1) -> 42),
     42 = mockgyver_dummy:return_arg(1),
-    42 = mockgyver_dummy:return_arg(2).
+    ?assertError(function_clause, mockgyver_dummy:return_arg(2)).
 
 can_change_return_value() ->
     1  = mockgyver_dummy:return_arg(1),
     ?WHEN(mockgyver_dummy:return_arg(1) -> 42),
     42 = mockgyver_dummy:return_arg(1),
-    42 = mockgyver_dummy:return_arg(2),
+    ?assertError(function_clause, mockgyver_dummy:return_arg(2)),
     ?WHEN(mockgyver_dummy:return_arg(_) -> 43),
     43 = mockgyver_dummy:return_arg(1),
     43 = mockgyver_dummy:return_arg(2).
@@ -74,3 +75,7 @@ inherits_variables_from_outer_scope() ->
     NewVal = 42,
     ?WHEN(mockgyver_dummy:return_arg(_) -> NewVal),
     42 = mockgyver_dummy:return_arg(1).
+
+can_use_params() ->
+    ?WHEN(mockgyver_dummy:return_arg(N) -> N+1),
+    2 = mockgyver_dummy:return_arg(1).
