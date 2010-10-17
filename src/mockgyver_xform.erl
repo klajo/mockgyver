@@ -113,7 +113,7 @@ rewrite_was_called_stmts_2(Type, Form0, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form0) of
         {true, #m_was_called{m=M, f=F, a=A0, crit=C}} ->
             A = args_to_match_spec(A0),
-            Befores = codegen:exprs(fun() -> fixme1 end),
+            Befores = [],
             Afters = [],
             [Form] = codegen:exprs(
                        fun() ->
