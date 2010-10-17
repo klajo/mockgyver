@@ -48,6 +48,9 @@ inject_init_f(function, Form, _Ctxt, Acc) ->
 inject_init_f(_Type, Form, _Ctxt, Acc) ->
     {Form, Acc}.
 
+%%------------------------------------------------------------
+%% was called statements
+%%------------------------------------------------------------
 rewrite_was_called_stmts(Forms, Ctxt) ->
     parse_trans:do_transform(fun rewrite_was_called_stmts_2/4, x, Forms, Ctxt).
 
@@ -67,6 +70,9 @@ rewrite_was_called_stmts_2(Type, Form0, _Ctxt, Acc) ->
             {Form0, true, Acc}
     end.
 
+%%------------------------------------------------------------
+%% traced MFAs
+%%------------------------------------------------------------
 find_mfas_to_trace(Forms, Ctxt) ->
     lists:usort(
       parse_trans:do_inspect(fun find_mfas_to_trace_f/4, [], Forms, Ctxt)).
@@ -82,6 +88,9 @@ find_mfas_to_trace_f(Type, Form, _Ctxt, Acc) ->
 was_called_to_tpat(#m_was_called{m=M, f=F, a=A}) ->
     {M, F, length(A)}. % a trace pattern we can pass to erlang:trace_pattern
 
+%%------------------------------------------------------------
+%% mock expression analysis
+%%------------------------------------------------------------
 is_mock_expr(tuple, Form) ->
     case erl_syntax:tuple_elements(Form) of
         [H | T] ->
