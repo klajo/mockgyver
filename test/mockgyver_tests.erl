@@ -19,10 +19,14 @@
 %%     ok = mockgyver:was_called({x, test, dbg:fun2ms(fun([3]) -> ok end)}, never).
 
 mock_test_() ->
+    code:add_patha(filename:dirname(code:which(?MODULE))),
     Ts = [fun traces_single_arg/0,
           fun traces_multi_args/0,
           fun traces_in_separate_process/0,
-          fun traces_in_separate_process/0],
+          fun traces_in_separate_process/0,
+          fun returns_other_value/0,
+          fun can_change_return_value/0,
+          fun inherits_variables_from_outer_scope/0],
     [fun() -> ?MOCK(T) end || T <- Ts].
 
 traces_single_arg() ->
@@ -50,3 +54,23 @@ traces_in_separate_process() ->
     MRef = erlang:monitor(process, Pid),
     receive {'DOWN',MRef,_,_,_} -> ok end,
     ?WAS_CALLED(mockgyver_dummy:return_arg(_), once).
+
+returns_other_value() ->
+    1  = mockgyver_dummy:return_arg(1),
+    ?WHEN(mockgyver_dummy:return_arg(1) -> 42),
+    42 = mockgyver_dummy:return_arg(1),
+    42 = mockgyver_dummy:return_arg(2).
+
+can_change_return_value() ->
+    1  = mockgyver_dummy:return_arg(1),
+    ?WHEN(mockgyver_dummy:return_arg(1) -> 42),
+    42 = mockgyver_dummy:return_arg(1),
+    42 = mockgyver_dummy:return_arg(2),
+    ?WHEN(mockgyver_dummy:return_arg(_) -> 43),
+    43 = mockgyver_dummy:return_arg(1),
+    43 = mockgyver_dummy:return_arg(2).
+
+inherits_variables_from_outer_scope() ->
+    NewVal = 42,
+    ?WHEN(mockgyver_dummy:return_arg(_) -> NewVal),
+    42 = mockgyver_dummy:return_arg(1).

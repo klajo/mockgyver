@@ -22,6 +22,8 @@
 -record(m_when, {m, f, a, action}).
 -record(m_was_called, {m, f, a, crit}).
 
+-record(env, {mock_mfas, trace_mfas}).
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -30,30 +32,73 @@ parse_transform(Forms, Opts) ->
     parse_trans:top(fun parse_transform_2/2, Forms, Opts).
 
 parse_transform_2(Forms0, Ctxt) ->
-    MFAs = find_mfas_to_trace(Forms0, Ctxt),
-    {Forms1, _} = rewrite_init_stmts(Forms0, Ctxt, MFAs),
-    {Forms, _} = rewrite_was_called_stmts(Forms1, Ctxt),
+    Env = #env{mock_mfas  = find_mfas_to_mock(Forms0, Ctxt),
+               trace_mfas = find_mfas_to_trace(Forms0, Ctxt)},
+    {Forms1, _} = rewrite_init_stmts(Forms0, Ctxt, Env),
+    {Forms2, _} = rewrite_when_stmts(Forms1, Ctxt),
+    {Forms, _}  = rewrite_was_called_stmts(Forms2, Ctxt),
     parse_trans:revert(Forms).
 
 %%------------------------------------------------------------
 %% init statements
 %%------------------------------------------------------------
-rewrite_init_stmts(Forms, Ctxt, MFAs) ->
-    parse_trans:do_transform(fun rewrite_init_stmts_2/4, MFAs, Forms, Ctxt).
+rewrite_init_stmts(Forms, Ctxt, Env) ->
+    parse_trans:do_transform(fun rewrite_init_stmts_2/4, Env, Forms, Ctxt).
 
-rewrite_init_stmts_2(Type, Form0, _Ctxt, MFAs) ->
+rewrite_init_stmts_2(Type, Form0, _Ctxt, Env) ->
     case is_mock_expr(Type, Form0) of
         {true, #m_init{exec_fun=ExecFun}} ->
             Befores = [],
             Afters = [],
-            Form = erl_syntax:application(erl_syntax:abstract(mockgyver),
-                                          erl_syntax:abstract(exec),
-                                          [erl_syntax:abstract(MFAs),
-                                           ExecFun]),
-            {Befores, Form, Afters, false, MFAs};
+            Form = erl_syntax:application(
+                     erl_syntax:abstract(mockgyver),
+                     erl_syntax:abstract(exec),
+                     [erl_syntax:abstract(Env#env.mock_mfas),
+                      erl_syntax:abstract(Env#env.trace_mfas),
+                      ExecFun]),
+            {Befores, Form, Afters, false, Env};
         _ ->
-            {Form0, true, MFAs}
+            {Form0, true, Env}
     end.
+
+%%------------------------------------------------------------
+%% when statements
+%%------------------------------------------------------------
+rewrite_when_stmts(Forms, Ctxt) ->
+    parse_trans:do_transform(fun rewrite_when_stmts_2/4, x, Forms, Ctxt).
+
+rewrite_when_stmts_2(Type, Form0, _Ctxt, Acc) ->
+    case is_mock_expr(Type, Form0) of
+        {true, #m_when{action=ActionExprs} = When} ->
+            Befores = [],
+            Form = erl_syntax:application(
+                     erl_syntax:abstract(mockgyver),
+                     erl_syntax:abstract(set_action),
+                     [erl_syntax:abstract(when_to_mfa(When)),
+                      mk_arity_0_fun_form(ActionExprs)]),
+            Afters = [],
+            {Befores, Form, Afters, false, Acc};
+        _ ->
+            {Form0, true, Acc}
+    end.
+
+mk_arity_0_fun_form(ActionExprs) ->
+    erl_syntax:fun_expr([erl_syntax:clause([], none, ActionExprs)]).
+    
+
+find_mfas_to_mock(Forms, Ctxt) ->
+    lists:usort(
+      parse_trans:do_inspect(fun find_mfas_to_mock_f/4, [], Forms, Ctxt)).
+
+find_mfas_to_mock_f(Type, Form, _Ctxt, Acc) ->
+    case is_mock_expr(Type, Form) of
+        {true, #m_when{} = W} -> {false, [when_to_mfa(W) | Acc]};
+        {true, _}             -> {true, Acc};
+        false                 -> {true, Acc}
+    end.
+
+when_to_mfa(#m_when{m=M, f=F, a=A}) ->
+    {M, F, length(A)}.
 
 %%------------------------------------------------------------
 %% was called statements
