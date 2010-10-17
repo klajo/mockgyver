@@ -227,7 +227,6 @@ check_criteria({at_least, N}, X) when X >= N -> ok;
 check_criteria({at_most, N}, X) when X =< N  -> ok;
 check_criteria({times, N}, N)                -> ok;
 check_criteria(never, 0)                     -> ok;
-check_criteria(any, _X)                      -> ok;
 check_criteria(Criteria, N) ->
     {error, {criteria_not_fulfilled, Criteria, N}}.
 
