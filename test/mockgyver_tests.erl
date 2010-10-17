@@ -24,7 +24,8 @@ parse_test() ->
     x:test(2),
     x:test(2),
     ?WAS_CALLED(x:test(1), once),
-    ?WAS_CALLED(x:test(2), {times, 2}).
+    ?WAS_CALLED(x:test(2), {times, 2}),
+    ?WAS_CALLED(x:test(2), any).
     
     
                  
