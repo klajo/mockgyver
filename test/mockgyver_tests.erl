@@ -21,6 +21,7 @@
 mock_test_() ->
     Ts = [fun traces_single_arg/0,
           fun traces_multi_args/0,
+          fun traces_in_separate_process/0,
           fun traces_in_separate_process/0],
     [fun() -> ?MOCK(T) end || T <- Ts].
 

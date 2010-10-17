@@ -27,28 +27,13 @@
 %%%===================================================================
 
 parse_transform(Forms, Opts) ->
-    %% io:format(user, "==> ~p~n", [find_mfas_to_trace(Forms0, Opts)]),
-    %% {Forms1, _} = parse_trans:depth_first(fun inject_init_f/4, x, Forms0, Opts),
-    %% a = rewrite_was_called_stmts(Forms1, Opts),
-    %% Forms = Forms1,
-    %% io:format(user, "==> ~p~n", [Forms]),
-    %% parse_trans:revert(Forms).
     parse_trans:top(fun parse_transform_2/2, Forms, Opts).
 
 parse_transform_2(Forms0, Ctxt) ->
     MFAs = find_mfas_to_trace(Forms0, Ctxt),
-    io:format(user, "==> ~p~n", [MFAs]),
     {Forms1, _} = rewrite_init_stmts(Forms0, Ctxt, MFAs),
     {Forms, _} = rewrite_was_called_stmts(Forms1, Ctxt),
     parse_trans:revert(Forms).
-    
-inject_init_f(function, Form, _Ctxt, Acc) ->
-    Name = erl_syntax:function_name(Form),
-    Cs0  = erl_syntax:function_clauses(Form),
-    Cs = Cs0,
-    {erl_syntax:function(Name, Cs), Acc};
-inject_init_f(_Type, Form, _Ctxt, Acc) ->
-    {Form, Acc}.
 
 %%------------------------------------------------------------
 %% init statements
@@ -65,7 +50,6 @@ rewrite_init_stmts_2(Type, Form0, _Ctxt, MFAs) ->
                                           erl_syntax:abstract(exec),
                                           [erl_syntax:abstract(MFAs),
                                            ExecFun]),
-            io:format(user, "==> ~p~n", [Form]),
             {Befores, Form, Afters, false, MFAs};
         _ ->
             {Form0, true, MFAs}
@@ -85,21 +69,17 @@ rewrite_was_called_stmts_2(Type, Form0, _Ctxt, Acc) ->
             Afters = [],
             [Form] = codegen:exprs(
                        fun() ->
-                               mockgyver:was_called({{'$var',M}, {'$var',F}, {'$var',A}}, {'$var',C})
+                               mockgyver:was_called(
+                                 {{'$var',M},{'$var',F},{'$var',A}},{'$var',C})
                        end),
-            io:format(user, "==> ~p~n", [Form]),
             {Befores, Form, Afters, false, Acc};
         _ ->
             {Form0, true, Acc}
     end.
 
-%%------------------------------------------------------------
-%% traced MFAs
-%%------------------------------------------------------------
 find_mfas_to_trace(Forms, Ctxt) ->
     lists:usort(
       parse_trans:do_inspect(fun find_mfas_to_trace_f/4, [], Forms, Ctxt)).
-%%    parse_trans:inspect(fun find_mfas_to_trace_f/4, [], Forms, Opts).
 
 find_mfas_to_trace_f(Type, Form, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form) of
