@@ -16,18 +16,15 @@
 %%     ok = mockgyver:was_called({x, test, dbg:fun2ms(fun([2]) -> ok end)}, {at_least, 2}),
 %%     ok = mockgyver:was_called({x, test, dbg:fun2ms(fun([3]) -> ok end)}, never).
 
-%% mock_test_() ->
-%%     [fun() -> ?MOCK(T) end || T <- [fun parse/0]].
+mock_test_() ->
+    [fun() -> ?MOCK(T) end || T <- [fun parse/0]].
                           
 
-parse_test() -> 
-    ?MOCK(
-       fun() ->
-           %%    ?WHEN(x:test(1) -> 42),
-           x:test(1),
-           x:test(2),
-           x:test(2),
-           ?WAS_CALLED(x:test(1), once),
-           ?WAS_CALLED(x:test(2), {times, 2}),
-           ?WAS_CALLED(x:test(_), {times, 3})
-       end).
+parse() -> 
+    %%    ?WHEN(x:test(1) -> 42),
+    x:test(1),
+    x:test(2),
+    x:test(2),
+    ?WAS_CALLED(x:test(1), once),
+    ?WAS_CALLED(x:test(2), {times, 2}),
+    ?WAS_CALLED(x:test(_), {times, 3}).

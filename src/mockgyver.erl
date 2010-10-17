@@ -37,12 +37,20 @@
 %%%===================================================================
 
 exec(MfaPatterns, Fun) ->
-    {ok, _} = start_link(),
-    try
-        start_session(MfaPatterns),
-        Fun()
-    after
-        stop()
+    case start_link() of
+        {ok, _} ->
+            try
+                start_session(MfaPatterns),
+                Fun()
+            after
+                stop()
+            end;
+        {error, {already_started, _}} ->
+            %% This can happen if ?MOCK calls, for some reason, are nested
+            start_session(MfaPatterns),
+            Fun();
+        {error, Reason} ->
+            erlang:error({failed_to_mock, Reason})
     end.
 
 %%--------------------------------------------------------------------
