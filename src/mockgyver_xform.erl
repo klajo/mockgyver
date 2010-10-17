@@ -18,6 +18,7 @@
 -export([parse_transform/2]).
 
 %% Records
+-record(m_init, {exec_fun}).
 -record(m_when, {m, f, a, action}).
 -record(m_was_called, {m, f, a, crit}).
 
@@ -37,7 +38,8 @@ parse_transform(Forms, Opts) ->
 parse_transform_2(Forms0, Ctxt) ->
     MFAs = find_mfas_to_trace(Forms0, Ctxt),
     io:format(user, "==> ~p~n", [MFAs]),
-    {Forms, _} = rewrite_was_called_stmts(Forms0, Ctxt),
+    {Forms1, _} = rewrite_init_stmts(Forms0, Ctxt, MFAs),
+    {Forms, _} = rewrite_was_called_stmts(Forms1, Ctxt),
     parse_trans:revert(Forms).
     
 inject_init_f(function, Form, _Ctxt, Acc) ->
@@ -47,6 +49,27 @@ inject_init_f(function, Form, _Ctxt, Acc) ->
     {erl_syntax:function(Name, Cs), Acc};
 inject_init_f(_Type, Form, _Ctxt, Acc) ->
     {Form, Acc}.
+
+%%------------------------------------------------------------
+%% init statements
+%%------------------------------------------------------------
+rewrite_init_stmts(Forms, Ctxt, MFAs) ->
+    parse_trans:do_transform(fun rewrite_init_stmts_2/4, MFAs, Forms, Ctxt).
+
+rewrite_init_stmts_2(Type, Form0, _Ctxt, MFAs) ->
+    case is_mock_expr(Type, Form0) of
+        {true, #m_init{exec_fun=ExecFun}} ->
+            Befores = [],
+            Afters = [],
+            Form = erl_syntax:application(erl_syntax:abstract(mockgyver),
+                                          erl_syntax:abstract(exec),
+                                          [erl_syntax:abstract(MFAs),
+                                           ExecFun]),
+            io:format(user, "==> ~p~n", [Form]),
+            {Befores, Form, Afters, false, MFAs};
+        _ ->
+            {Form0, true, MFAs}
+    end.
 
 %%------------------------------------------------------------
 %% was called statements
@@ -81,7 +104,7 @@ find_mfas_to_trace(Forms, Ctxt) ->
 find_mfas_to_trace_f(Type, Form, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form) of
         {true, #m_was_called{} = WC} -> {false, [was_called_to_tpat(WC) | Acc]};
-        {true, _}                    -> {false, Acc};
+        {true, _}                    -> {true, Acc};
         false                        -> {true, Acc}
     end.
 
@@ -106,9 +129,13 @@ is_mock_expr(_Type, _Form) ->
 
 analyze_mock_form([Type, Expr]) ->
     case erl_syntax:atom_value(Type) of
+        m_init       -> analyze_init_expr(Expr);
         m_when       -> analyze_when_expr(Expr);
         m_was_called -> analyze_was_called_expr(Expr)
     end.
+
+analyze_init_expr(Expr) ->
+    #m_init{exec_fun=Expr}.
 
 analyze_when_expr(Expr) ->
     %% The first clause of the if expression is all we want, the sole

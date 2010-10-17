@@ -10,14 +10,14 @@
 -behaviour(gen_server).
 
 %% API
+-export([exec/2]).
+
 -export([start_link/0]).
 -export([stop/0]).
 
 -export([start_session/1]).
 
 -export([was_called/1, was_called/2]).
-
--export([test/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -36,8 +36,14 @@
 %%% API
 %%%===================================================================
 
-test(X) ->
-    X.
+exec(MfaPatterns, Fun) ->
+    {ok, _} = start_link(),
+    try
+        start_session(MfaPatterns),
+        Fun()
+    after
+        stop()
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc

@@ -6,6 +6,8 @@
 -define(WRAP(Type, Expr),
         {'$mock', Type, Expr}).
 
+-define(MOCK(Expr), ?WRAP(m_init, (Expr))).
+
 -define(WHEN(Expr),                 ?WRAP(m_when, if Expr; true -> ok end)).
 
 %-define(WAS_CALLED(Expr),           ?WRAP(m_was_called, {Expr, once))).
