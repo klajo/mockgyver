@@ -137,7 +137,7 @@ args_to_match_spec(Args) ->
     %% ... and passing it to:
     %%
     %%     ms_transform:transform_from_shell(dbg, Expr)
-    Clause = erl_syntax:clause(_Pat=[erl_syntax:abstract(Args)],
+    Clause = erl_syntax:clause(_Pat=[erl_syntax:revert(erl_syntax:list(Args))],
                                _Guard=none,
                                _Body=[erl_syntax:atom(dummy)]),
     Clauses = parse_trans:revert([Clause]),
@@ -145,8 +145,7 @@ args_to_match_spec(Args) ->
 
 analyze_application(Form) ->
     MF = erl_syntax:application_operator(Form),
-    A  = [erl_syntax:concrete(X) ||
-             X <- erl_syntax:application_arguments(Form)],
     M  = erl_syntax:concrete(erl_syntax:module_qualifier_argument(MF)),
     F  = erl_syntax:concrete(erl_syntax:module_qualifier_body(MF)),
+    A  = erl_syntax:application_arguments(Form),
     {M, F, A}.
