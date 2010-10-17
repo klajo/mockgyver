@@ -19,9 +19,11 @@
 %%     ok = mockgyver:was_called({x, test, dbg:fun2ms(fun([3]) -> ok end)}, never).
 
 mock_test_() ->
-    [fun() -> ?MOCK(T) end || T <- [fun parse/0]].
-                          
-parse() -> 
+    Ts = [fun traces_single_arg/0,
+          fun traces_multi_args/0],
+    [fun() -> ?MOCK(T) end || T <- Ts].
+
+traces_single_arg() ->
     %%    ?WHEN(x:test(1) -> 42),
     1 = mockgyver_dummy:return_arg(1),
     2 = mockgyver_dummy:return_arg(2),
@@ -29,3 +31,14 @@ parse() ->
     ?WAS_CALLED(mockgyver_dummy:return_arg(1), once),
     ?WAS_CALLED(mockgyver_dummy:return_arg(2), {times, 2}),
     ?WAS_CALLED(mockgyver_dummy:return_arg(_), {times, 3}).
+
+traces_multi_args() ->
+    %%    ?WHEN(x:test(1) -> 42),
+    {a, 1} = mockgyver_dummy:return_arg(a, 1),
+    {a, 2} = mockgyver_dummy:return_arg(a, 2),
+    {b, 2} = mockgyver_dummy:return_arg(b, 2),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(a, 1), once),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(a, 2), once),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(b, 2), once),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_, 1), {times, 1}),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_, 2), {times, 2}).
