@@ -20,7 +20,8 @@
 
 mock_test_() ->
     Ts = [fun traces_single_arg/0,
-          fun traces_multi_args/0],
+          fun traces_multi_args/0,
+          fun traces_in_separate_process/0],
     [fun() -> ?MOCK(T) end || T <- Ts].
 
 traces_single_arg() ->
@@ -42,3 +43,9 @@ traces_multi_args() ->
     ?WAS_CALLED(mockgyver_dummy:return_arg(b, 2), once),
     ?WAS_CALLED(mockgyver_dummy:return_arg(_, 1), {times, 1}),
     ?WAS_CALLED(mockgyver_dummy:return_arg(_, 2), {times, 2}).
+
+traces_in_separate_process() ->
+    Pid = proc_lib:spawn_link(fun() -> mockgyver_dummy:return_arg(1) end),
+    MRef = erlang:monitor(process, Pid),
+    receive {'DOWN',MRef,_,_,_} -> ok end,
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_), once).
