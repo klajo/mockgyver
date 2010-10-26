@@ -52,8 +52,8 @@ exec(MockMFAs, TraceMFAs, Fun) ->
                 start_session(TraceMFAs),
                 Fun()
             after
-                stop(),
-                unload_mods(MockMods)
+                unload_mods(MockMods),
+                stop()
             end;
         {error, {already_started, _}} ->
             %% This can happen if ?MOCK calls, for some reason, are nested
