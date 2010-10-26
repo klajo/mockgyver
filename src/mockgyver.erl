@@ -336,6 +336,15 @@ mk_mocked_funcs(Mod, OrigMod, ExportedFAs) ->
               ExportedFAs).
 
 mk_mocked_func(Mod, OrigMod, {F, A}) ->
+    %% Generate a function like this (some_mod, some_func and arguments vary):
+    %%
+    %%     some_func(A2, A1) ->
+    %%         case mockgyver:get_action({some_mod,some_func,2}) of
+    %%             undefined ->
+    %%                 '^some_mod':some_func(A2, A1);
+    %%             ActionFun ->
+    %%                 ActionFun(A2, A1)
+    %%         end.
     Args = mk_args(A),
     Body =[erl_syntax:case_expr(
              mk_call(mockgyver, get_action,
