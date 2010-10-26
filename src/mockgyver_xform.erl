@@ -49,13 +49,15 @@ rewrite_init_stmts_2(Type, Form0, _Ctxt, Env) ->
     case is_mock_expr(Type, Form0) of
         {true, #m_init{exec_fun=ExecFun}} ->
             Befores = [],
+            MockMfas = Env#env.mock_mfas,
+            TraceMfas = Env#env.trace_mfas,
+            [Form] = codegen:exprs(
+                       fun() ->
+                               mockgyver:exec({'$var',  MockMfas},
+                                              {'$var',  TraceMfas},
+                                              {'$form', ExecFun})
+                       end),
             Afters = [],
-            Form = erl_syntax:application(
-                     erl_syntax:abstract(mockgyver),
-                     erl_syntax:abstract(exec),
-                     [erl_syntax:abstract(Env#env.mock_mfas),
-                      erl_syntax:abstract(Env#env.trace_mfas),
-                      ExecFun]),
             {Befores, Form, Afters, false, Env};
         _ ->
             {Form0, true, Env}
@@ -71,12 +73,11 @@ rewrite_when_stmts_2(Type, Form0, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form0) of
         {true, #m_when{m=M, f=F, action=ActionFun}} ->
             Befores = [],
-            Form = erl_syntax:application(
-                     erl_syntax:abstract(mockgyver),
-                     erl_syntax:abstract(set_action),
-                     [erl_syntax:tuple([erl_syntax:abstract(M),
-                                        erl_syntax:abstract(F),
-                                        ActionFun])]),
+            [Form] = codegen:exprs(
+                       fun() ->
+                               mockgyver:set_action({{'$var', M}, {'$var', F},
+                                                     {'$form', ActionFun}})
+                       end),
             Afters = [],
             {Befores, Form, Afters, false, Acc};
         _ ->
@@ -114,12 +115,12 @@ rewrite_was_called_stmts_2(Type, Form0, _Ctxt, Acc) ->
         {true, #m_was_called{m=M, f=F, a=A0, crit=C}} ->
             A = args_to_match_spec(A0),
             Befores = [],
-            Afters = [],
             [Form] = codegen:exprs(
                        fun() ->
                                mockgyver:was_called(
                                  {{'$var',M},{'$var',F},{'$var',A}},{'$var',C})
                        end),
+            Afters = [],
             {Befores, Form, Afters, false, Acc};
         _ ->
             {Form0, true, Acc}
