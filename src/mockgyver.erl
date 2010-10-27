@@ -110,8 +110,6 @@ was_called({M, F, A}, Criteria) ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    %% dbg:stop_clear(),
-    %% dbg:tracer(process, {mk_tracer_fun(self()), dummy}),
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -211,16 +209,7 @@ code_change(_OldVsn, State, _Extra) ->
 call(Msg) ->
     gen_server:call(?SERVER, Msg).
 
-mk_tracer_fun(Parent) ->
-    fun(Msg, State) ->
-            Parent ! Msg,
-            State
-    end.
-
 i_start_session(MFAs, Pid, State) ->
-%    dbg:p(all, c),
-    %% lists:foreach(fun(MFAPattern) -> apply(dbg, tpl, MFAPattern) end,
-    %%               TraceMFAs),
     erlang:trace(all, true, [call, {tracer, self()}]),
     lists:foreach(fun({M,_F,_A} = MFA) ->
                           %% Ensure the module is loaded, otherwise
@@ -234,7 +223,6 @@ i_start_session(MFAs, Pid, State) ->
     State#state{calls=[], mref=MRef}.
 
 i_end_session(State) ->
-%%    dbg:ctpl(),
     erlang:trace(all, false, [call, {tracer, self()}]),
     State#state{mref=undefined}.
 
@@ -284,17 +272,6 @@ i_set_action({M, F, ActionFun}, #state{actions=Actions0} = State) ->
                              #action{mfa=MFA, func=ActionFun}),
     State#state{actions=Actions}.
 
-%% ms_transform:transform_from_shell(dbg, [{clause,1,
-%% 139>                           [{cons,1,
-%% 139>                                  {integer,1,1},
-%% 139>                                  {cons,1,{integer,1,2},{nil,1}}}],
-%% 139>                           [],
-%% 139>                           [{atom,1,ok}]}], []).
-%% [{[1,2],[],[ok]}]
-
-
-%% element(2,erl_parse:parse_exprs(element(2, erl_scan:string("fun([1,2]) -> ok end.")))).
-
 wait_until_trace_delivered() ->
     Ref = erlang:trace_delivered(all),
     receive {trace_delivered, _, Ref} -> ok end.
@@ -302,7 +279,6 @@ wait_until_trace_delivered() ->
 chk(ok)              -> ok;
 chk({ok, _} = Ok)    -> Ok;
 chk({error, Reason}) -> erlang:error(Reason).
-
 
 mock_and_load_mods(Mods) ->
     lists:foreach(fun mock_and_load_mod/1, Mods).
@@ -327,7 +303,6 @@ mk_mocking_mod(Mod, OrigMod, ExportedFAs) ->
                                     [erl_syntax:abstract(Mod)])]
               ++ mk_mocked_funcs(Mod, OrigMod, ExportedFAs)),
     Forms = [erl_syntax:revert(Form) || Form <- Forms0],
-    %% [io:format(user, "~s~n", [erl_pp:form(Form)]) || Form <- Forms],
     {ok, Mod, Bin} = compile:forms(Forms, [report, export_all]),
     {module, Mod} = code:load_binary(Mod, "mock", Bin).
 
