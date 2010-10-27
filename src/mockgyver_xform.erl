@@ -20,7 +20,7 @@
 %% Records
 -record(m_init, {exec_fun}).
 -record(m_when, {m, f, a, action}).
--record(m_was_called, {m, f, a, crit}).
+-record(m_was_called, {m, f, a, g, crit}).
 
 -record(env, {mock_mfas, trace_mfas}).
 
@@ -112,13 +112,13 @@ rewrite_was_called_stmts(Forms, Ctxt) ->
 
 rewrite_was_called_stmts_2(Type, Form0, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form0) of
-        {true, #m_was_called{m=M, f=F, a=A0, crit=C}} ->
-            A = args_to_match_spec(A0),
+        {true, #m_was_called{m=M, f=F, a=A, g=G, crit=C}} ->
+            MS = args_to_match_spec(A, G),
             Befores = [],
             [Form] = codegen:exprs(
                        fun() ->
                                mockgyver:was_called(
-                                 {{'$var',M},{'$var',F},{'$var',A}},{'$var',C})
+                                 {{'$var',M},{'$var',F},{'$var',MS}},{'$var',C})
                        end),
             Afters = [],
             {Befores, Form, Afters, false, Acc};
@@ -207,11 +207,14 @@ get_when_call_sig(Clause) ->
     {M, F, length(A)}.
 
 analyze_was_called_expr(Form) ->
-    [Call, Criteria] = erl_syntax:tuple_elements(Form),
+    [Case, Criteria] = erl_syntax:tuple_elements(Form),
+    [Clause | _] = erl_syntax:case_expr_clauses(Case),
+    [Call | _] = erl_syntax:clause_patterns(Clause),
+    G = erl_syntax:clause_guard(Clause),
     {M, F, A} = analyze_application(Call),
-    #m_was_called{m=M, f=F, a=A, crit=erl_syntax:concrete(Criteria)}.
+    #m_was_called{m=M, f=F, a=A, g=G, crit=erl_syntax:concrete(Criteria)}.
 
-args_to_match_spec(Args) ->
+args_to_match_spec(Args, Guard) ->
     %% The idea here is that we'll use the match spec transform from
     %% the shell.  Example:
     %%
@@ -231,7 +234,7 @@ args_to_match_spec(Args) ->
     %%
     %%     ms_transform:transform_from_shell(dbg, Expr)
     Clause = erl_syntax:clause(_Pat=[erl_syntax:revert(erl_syntax:list(Args))],
-                               _Guard=none,
+                               Guard,
                                _Body=[erl_syntax:atom(dummy)]),
     Clauses = parse_trans:revert([Clause]),
     ms_transform:transform_from_shell(dbg, Clauses, []).
