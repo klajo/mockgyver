@@ -84,12 +84,6 @@ rewrite_when_stmts_2(Type, Form0, _Ctxt, Acc) ->
             {Form0, true, Acc}
     end.
 
-pp(Form) ->
-    io:format(user, "~s~n", [erl_pp:form(erl_syntax:revert(Form))]).
-
-mk_fun_form(Args, ActionExprs) ->
-    erl_syntax:fun_expr([erl_syntax:clause(Args, none, ActionExprs)]).
-
 find_mfas_to_mock(Forms, Ctxt) ->
     lists:usort(
       parse_trans:do_inspect(fun find_mfas_to_mock_f/4, [], Forms, Ctxt)).
