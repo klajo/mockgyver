@@ -71,6 +71,7 @@ allows_was_called_guards() ->
 
 returns_other_value() ->
     1  = mockgyver_dummy:return_arg(1),
+    2  = mockgyver_dummy:return_arg(2),
     ?WHEN(mockgyver_dummy:return_arg(1) -> 42),
     42 = mockgyver_dummy:return_arg(1),
     ?assertError(function_clause, mockgyver_dummy:return_arg(2)).
