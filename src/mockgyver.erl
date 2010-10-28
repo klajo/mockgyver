@@ -55,10 +55,8 @@ exec(MockMFAs, TraceMFAs, Fun) ->
                 unload_mods(MockMods),
                 stop()
             end;
-        {error, {already_started, _}} ->
-            %% This can happen if ?MOCK calls, for some reason, are nested
-            start_session(TraceMFAs),
-            Fun();
+        {error, {already_started, _}} -> 
+            erlang:error(nestling_mocks_is_not_allowed);
         {error, Reason} ->
             erlang:error({failed_to_mock, Reason})
     end.
