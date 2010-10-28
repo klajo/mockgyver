@@ -67,8 +67,6 @@ allows_was_called_guards() ->
     ?WAS_CALLED(mockgyver_dummy:return_arg(N) when N == 1, once),
     ?WAS_CALLED(mockgyver_dummy:return_arg(N) when N == 2, never).
 
-%% FIXME: possibility to add functions using a mock?
-
 returns_other_value() ->
     1  = mockgyver_dummy:return_arg(1),
     2  = mockgyver_dummy:return_arg(2),
