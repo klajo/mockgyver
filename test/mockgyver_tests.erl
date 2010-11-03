@@ -25,8 +25,8 @@ mock_test_() ->
           fun traces_in_separate_process/0,
           fun traces_in_separate_process/0,
           fun matches_called_arguments/0,
-          fun allows_was_called_guards_with_variables_not_used_in_args_list/0,
           fun allows_was_called_guards/0,
+          fun allows_was_called_guards_with_variables_not_used_in_args_list/0,
           fun returns_called_arguments/0,
           fun returns_other_value/0,
           fun can_change_return_value/0,
@@ -66,15 +66,15 @@ matches_called_arguments() ->
     ?WAS_CALLED(mockgyver_dummy:return_arg(N), never),
     ?WAS_CALLED(mockgyver_dummy:return_arg(O), once).
 
-allows_was_called_guards_with_variables_not_used_in_args_list() ->
-    W = 2,
-    mockgyver_dummy:return_arg(1),
-    ?WAS_CALLED(mockgyver_dummy:return_arg(_) when W == 2, once).
-
 allows_was_called_guards() ->
     mockgyver_dummy:return_arg(1),
     ?WAS_CALLED(mockgyver_dummy:return_arg(N) when N == 1, once),
     ?WAS_CALLED(mockgyver_dummy:return_arg(N) when N == 2, never).
+
+allows_was_called_guards_with_variables_not_used_in_args_list() ->
+    W = 2,
+    mockgyver_dummy:return_arg(1),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_) when W == 2, once).
 
 returns_called_arguments() ->
     mockgyver_dummy:return_arg(1),
