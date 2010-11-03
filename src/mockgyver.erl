@@ -228,17 +228,22 @@ i_reg_call({M, F, A}, #state{calls=Calls} = State) ->
     State#state{calls=[#call{m=M, f=F, a=A} | Calls]}.
 
 i_was_called(MFA, Criteria, State) ->
-    NumMatches = count_matches(MFA, State),
-    check_criteria(Criteria, NumMatches).
+    Matches = get_matches(MFA, State),
+    case check_criteria(Criteria, length(Matches)) of
+        ok ->
+            {ok, Matches};
+        {error, _} = Error ->
+            Error
+    end.
 
-count_matches({_M, _F, _A}=ExpectMFA, #state{calls=Calls}) ->
-    lists:foldl(fun(#call{m=M0, f=F0, a=A0}, Num) ->
+get_matches({_M, _F, _A}=ExpectMFA, #state{calls=Calls}) ->
+    lists:foldl(fun(#call{m=M0, f=F0, a=A0}, Matches) ->
                         case is_match({M0,F0,A0}, ExpectMFA) of
-                            true  -> Num+1;
-                            false -> Num
+                            true  -> [A0 | Matches];
+                            false -> Matches
                         end
                 end,
-                0,
+                [],
                 Calls).
 
 is_match({CallM,CallF,CallA}, {ExpectM,ExpectF,ExpectA}) when CallM==ExpectM,
@@ -280,7 +285,7 @@ wait_until_trace_delivered() ->
     receive {trace_delivered, _, Ref} -> ok end.
 
 chk(ok)              -> ok;
-chk({ok, _} = Ok)    -> Ok;
+chk({ok, Value})     -> Value;
 chk({error, Reason}) -> erlang:error(Reason).
 
 mock_and_load_mods(Mods) ->

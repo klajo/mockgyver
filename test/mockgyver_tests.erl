@@ -27,6 +27,7 @@ mock_test_() ->
           fun matches_called_arguments/0,
           fun allows_was_called_guards_with_variables_not_used_in_args_list/0,
           fun allows_was_called_guards/0,
+          fun returns_called_arguments/0,
           fun returns_other_value/0,
           fun can_change_return_value/0,
           fun inherits_variables_from_outer_scope/0,
@@ -74,6 +75,11 @@ allows_was_called_guards() ->
     mockgyver_dummy:return_arg(1),
     ?WAS_CALLED(mockgyver_dummy:return_arg(N) when N == 1, once),
     ?WAS_CALLED(mockgyver_dummy:return_arg(N) when N == 2, never).
+
+returns_called_arguments() ->
+    mockgyver_dummy:return_arg(1),
+    mockgyver_dummy:return_arg(2),
+    [[1], [2]] = ?WAS_CALLED(mockgyver_dummy:return_arg(N), {times, 2}).
 
 returns_other_value() ->
     1  = mockgyver_dummy:return_arg(1),
