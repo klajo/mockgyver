@@ -258,7 +258,7 @@ rename_vars(none, _RenameP) ->
 rename_vars(Forms0, RenameP) ->
     {Forms, {NameMap, RenameP}} =
         erl_syntax_lib:mapfold(fun rename_vars_2/2, {[], RenameP}, Forms0),
-    {Forms, NameMap}.
+    {Forms, lists:usort(NameMap)}.
 
 rename_vars_2({var, L, VarName0}=Form, {NameMap0, RenameP}) ->
     case RenameP(VarName0) of
