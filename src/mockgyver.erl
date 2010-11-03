@@ -55,7 +55,7 @@ exec(MockMFAs, TraceMFAs, Fun) ->
                 unload_mods(MockMods),
                 stop()
             end;
-        {error, {already_started, _}} -> 
+        {error, {already_started, _}} ->
             erlang:error(nestling_mocks_is_not_allowed);
         {error, Reason} ->
             erlang:error({failed_to_mock, Reason})
@@ -231,9 +231,9 @@ i_was_called(MFA, Criteria, State) ->
     NumMatches = count_matches(MFA, State),
     check_criteria(Criteria, NumMatches).
 
-count_matches({_M, _F, _A}=SpecMFA, #state{calls=Calls}) ->
+count_matches({_M, _F, _A}=ExpectMFA, #state{calls=Calls}) ->
     lists:foldl(fun(#call{m=M0, f=F0, a=A0}, Num) ->
-                        case is_match({M0,F0,A0}, SpecMFA) of
+                        case is_match({M0,F0,A0}, ExpectMFA) of
                             true  -> Num+1;
                             false -> Num
                         end
@@ -241,12 +241,17 @@ count_matches({_M, _F, _A}=SpecMFA, #state{calls=Calls}) ->
                 0,
                 Calls).
 
-is_match({CallM, CallF, CallA}, {SpecM, SpecF, SpecA}) when CallM == SpecM,
-                                                            CallF == SpecF -> 
-    {ok, IsMatch, _Warns, _Flags} = erlang:match_spec_test(CallA, SpecA, trace),
-    IsMatch;
-is_match(_Call, _Spec) ->
-    false.
+is_match({CallM,CallF,CallA}, {ExpectM,ExpectF,ExpectA}) when CallM==ExpectM,
+                                                              CallF==ExpectF ->
+    try
+        ExpectA(CallA),
+        true
+    catch
+        error:function_clause -> % when arity or guards don't match
+            false;
+        error:{badmatch, _} ->   % when previously bound vars don't match
+            false
+    end.
 
 check_criteria(once, 1)                      -> ok;
 check_criteria({at_least, N}, X) when X >= N -> ok;

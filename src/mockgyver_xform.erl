@@ -107,12 +107,13 @@ rewrite_was_called_stmts(Forms, Ctxt) ->
 rewrite_was_called_stmts_2(Type, Form0, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form0) of
         {true, #m_was_called{m=M, f=F, a=A, g=G, crit=C}} ->
-            MS = args_to_match_spec(A, G),
+            Fun = mk_was_called_checker_fun(A, G),
             Befores = [],
             [Form] = codegen:exprs(
                        fun() ->
                                mockgyver:was_called(
-                                 {{'$var',M},{'$var',F},{'$var',MS}},{'$var',C})
+                                 {{'$var', M}, {'$var', F}, {'$form', Fun}},
+                                 {'$var', C})
                        end),
             Afters = [],
             {Befores, Form, Afters, false, Acc};
@@ -208,30 +209,60 @@ analyze_was_called_expr(Form) ->
     {M, F, A} = analyze_application(Call),
     #m_was_called{m=M, f=F, a=A, g=G, crit=erl_syntax:concrete(Criteria)}.
 
-args_to_match_spec(Args, Guard) ->
-    %% The idea here is that we'll use the match spec transform from
-    %% the shell.  Example:
+mk_was_called_checker_fun(Args0, Guard0) ->
+    %% Let's say there's a statement like this:
+    %%     N = 42,
+    %%     ...
+    %%     ?WAS_CALLED(x:y(N), once),
     %%
-    %%     1> dbg:fun2ms(fun([1]) -> ok end)
-    %%     [{[1,2],[],[ok]}]
+    %% How do we rewrite this to something that can be used to check
+    %% whether it matches or not?
     %%
-    %% The shell does this by taking the parsed clauses from the fun:
+    %% * we want N to match only 42, but "fun(N) -> ... end" would
+    %%   match anything
     %%
-    %%     [{clause,1,
-    %%      [{cons,1,
-    %%        {integer,1,1},
-    %%        {cons,1,{integer,1,2},{nil,1}}}],
-    %%      [],
-    %%      [{atom,1,ok}]}]
+    %% * we could write a guard, but we'd need to take care of guards
+    %%   the user has written and make sure our guards work with theirs
     %%
-    %% ... and passing it to:
+    %% * a match would take care of this
     %%
-    %%     ms_transform:transform_from_shell(dbg, Expr)
-    Clause = erl_syntax:clause(_Pat=[erl_syntax:revert(erl_syntax:list(Args))],
-                               Guard,
-                               _Body=[erl_syntax:atom(dummy)]),
+    %% Hence, convert the statement to a fun:
+    %%     fun([____N]) ->
+    %%            N = ____N,
+    %%            [N]
+    %%     end
+    {Args, NameMap0} = rename_vars(erl_syntax:list(Args0)),
+    {Guard, _NameMap1} = rename_vars(Guard0),
+    Body =
+        %% This first statement generates one match expression per
+        %% variable.  The idea is that a badmatch implies that the fun
+        %% didn't match the call.
+        [erl_syntax:match_expr(erl_syntax:variable(N0),
+                               erl_syntax:variable(N1))
+         || {N0, N1} <- NameMap0]
+        %% This section ensures that all variables are used and we
+        %% avoid the "unused variable" warning
+        ++ [erl_syntax:list([erl_syntax:variable(N0) ||
+                                {N0, _N1} <- NameMap0])],
+    Clause = erl_syntax:clause([Args], Guard, Body),
     Clauses = parse_trans:revert([Clause]),
-    ms_transform:transform_from_shell(dbg, Clauses, []).
+    erl_syntax:revert(erl_syntax:fun_expr(Clauses)).
+
+rename_vars(none) ->
+    {none, []};
+rename_vars(Forms0) ->
+    erl_syntax_lib:mapfold(fun rename_vars_2/2, [], Forms0).
+
+rename_vars_2({var, L, VarName0}=Form, Acc) ->
+    case atom_to_list(VarName0) of
+        "_"++_ ->
+            {Form, Acc};
+        VarNameStr0 ->
+            VarName1 = list_to_atom("____" ++ VarNameStr0),
+            {{var, L, VarName1}, [{VarName0, VarName1} | Acc]}
+    end;
+rename_vars_2(Form, Acc) ->
+    {Form, Acc}.
 
 analyze_application(Form) ->
     MF = erl_syntax:application_operator(Form),

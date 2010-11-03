@@ -24,7 +24,7 @@ mock_test_() ->
           fun traces_multi_args/0,
           fun traces_in_separate_process/0,
           fun traces_in_separate_process/0,
-%%          fun matches_called_arguments/0,
+          fun matches_called_arguments/0,
           fun allows_was_called_guards/0,
           fun returns_other_value/0,
           fun can_change_return_value/0,
@@ -57,10 +57,12 @@ traces_in_separate_process() ->
     receive {'DOWN',MRef,_,_,_} -> ok end,
     ?WAS_CALLED(mockgyver_dummy:return_arg(_), once).
 
-%% matches_called_arguments() ->
-%%     N = 42,
-%%     mockgyver_dummy:return_arg(1),
-%%    ?WAS_CALLED(mockgyver_dummy:return_arg(N), never).
+matches_called_arguments() ->
+    N = 42,
+    O = 1,
+    mockgyver_dummy:return_arg(1),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(N), never),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(O), once).
 
 allows_was_called_guards() ->
     mockgyver_dummy:return_arg(1),
