@@ -231,8 +231,13 @@ mk_was_called_checker_fun(Args0, Guard0) ->
     %%            N = ____N,
     %%            [N]
     %%     end
-    {Args, NameMap0} = rename_vars(erl_syntax:list(Args0)),
-    {Guard, _NameMap1} = rename_vars(Guard0),
+
+    %% Rename all variables in the args list
+    {Args, NameMap0} = rename_vars(erl_syntax:list(Args0), fun(_) -> true end),
+    %% Rename only variables in guards which are also present in the args list
+    RenameVars = [N0 || {N0, _N1} <- NameMap0],
+    {Guard, _NameMap1} =
+        rename_vars(Guard0, fun(V) -> lists:member(V, RenameVars) end),
     Body =
         %% This first statement generates one match expression per
         %% variable.  The idea is that a badmatch implies that the fun
@@ -248,20 +253,28 @@ mk_was_called_checker_fun(Args0, Guard0) ->
     Clauses = parse_trans:revert([Clause]),
     erl_syntax:revert(erl_syntax:fun_expr(Clauses)).
 
-rename_vars(none) ->
+rename_vars(none, _RenameP) ->
     {none, []};
-rename_vars(Forms0) ->
-    erl_syntax_lib:mapfold(fun rename_vars_2/2, [], Forms0).
+rename_vars(Forms0, RenameP) ->
+    {Forms, {NameMap, RenameP}} =
+        erl_syntax_lib:mapfold(fun rename_vars_2/2, {[], RenameP}, Forms0),
+    {Forms, NameMap}.
 
-rename_vars_2({var, L, VarName0}=Form, Acc) ->
-    case atom_to_list(VarName0) of
-        "_"++_ ->
-            {Form, Acc};
-        VarNameStr0 ->
-            VarName1 = list_to_atom("____" ++ VarNameStr0),
-            {{var, L, VarName1}, [{VarName0, VarName1} | Acc]}
+rename_vars_2({var, L, VarName0}=Form, {NameMap0, RenameP}) ->
+    case RenameP(VarName0) of
+        true ->
+            case atom_to_list(VarName0) of
+                "_"++_ ->
+                    {Form, {NameMap0, RenameP}};
+                VarNameStr0 ->
+                    VarName1 = list_to_atom("____" ++ VarNameStr0),
+                    NameMap = [{VarName0, VarName1} | NameMap0],
+                    {{var, L, VarName1}, {NameMap, RenameP}}
+            end;
+        false ->
+            {Form, {NameMap0, RenameP}}
     end;
-rename_vars_2(Form, Acc) ->
+rename_vars_2(Form, {_NameMap, _RenameP}=Acc) ->
     {Form, Acc}.
 
 analyze_application(Form) ->
