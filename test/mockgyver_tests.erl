@@ -63,8 +63,11 @@ matches_called_arguments() ->
     N = 42,
     O = 1,
     mockgyver_dummy:return_arg(1),
+    mockgyver_dummy:return_arg({N,O}),
     ?WAS_CALLED(mockgyver_dummy:return_arg(N), never),
-    ?WAS_CALLED(mockgyver_dummy:return_arg(O), once).
+    ?WAS_CALLED(mockgyver_dummy:return_arg(O), once),
+    ?WAS_CALLED(mockgyver_dummy:return_arg({_,N}), never),
+    ?WAS_CALLED(mockgyver_dummy:return_arg({N,O}), once).
 
 allows_was_called_guards() ->
     mockgyver_dummy:return_arg(1),
