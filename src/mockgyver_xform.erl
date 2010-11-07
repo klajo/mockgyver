@@ -20,7 +20,7 @@
 %% Records
 -record(m_init, {exec_fun}).
 -record(m_when, {m, f, a, action}).
--record(m_was_called, {m, f, a, g, crit}).
+-record(m_verify, {m, f, a, g, crit}).
 
 -record(env, {mock_mfas, trace_mfas}).
 
@@ -36,7 +36,7 @@ parse_transform_2(Forms0, Ctxt) ->
                trace_mfas = find_mfas_to_trace(Forms0, Ctxt)},
     {Forms1, _} = rewrite_init_stmts(Forms0, Ctxt, Env),
     {Forms2, _} = rewrite_when_stmts(Forms1, Ctxt),
-    {Forms, _}  = rewrite_was_called_stmts(Forms2, Ctxt),
+    {Forms, _}  = rewrite_verify_stmts(Forms2, Ctxt),
     parse_trans:revert(Forms).
 
 %%------------------------------------------------------------
@@ -101,17 +101,17 @@ when_to_mfa(#m_when{m=M, f=F, a=A}) ->
 %%------------------------------------------------------------
 %% was called statements
 %%------------------------------------------------------------
-rewrite_was_called_stmts(Forms, Ctxt) ->
-    parse_trans:do_transform(fun rewrite_was_called_stmts_2/4, x, Forms, Ctxt).
+rewrite_verify_stmts(Forms, Ctxt) ->
+    parse_trans:do_transform(fun rewrite_verify_stmts_2/4, x, Forms, Ctxt).
 
-rewrite_was_called_stmts_2(Type, Form0, _Ctxt, Acc) ->
+rewrite_verify_stmts_2(Type, Form0, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form0) of
-        {true, #m_was_called{m=M, f=F, a=A, g=G, crit=C}} ->
-            Fun = mk_was_called_checker_fun(A, G),
+        {true, #m_verify{m=M, f=F, a=A, g=G, crit=C}} ->
+            Fun = mk_verify_checker_fun(A, G),
             Befores = [],
             [Form] = codegen:exprs(
                        fun() ->
-                               mockgyver:was_called(
+                               mockgyver:verify(
                                  {{'$var', M}, {'$var', F}, {'$form', Fun}},
                                  {'$var', C})
                        end),
@@ -127,12 +127,12 @@ find_mfas_to_trace(Forms, Ctxt) ->
 
 find_mfas_to_trace_f(Type, Form, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form) of
-        {true, #m_was_called{} = WC} -> {false, [was_called_to_tpat(WC) | Acc]};
-        {true, _}                    -> {true, Acc};
-        false                        -> {true, Acc}
+        {true, #m_verify{} = WC} -> {false, [verify_to_tpat(WC) | Acc]};
+        {true, _}                -> {true, Acc};
+        false                    -> {true, Acc}
     end.
 
-was_called_to_tpat(#m_was_called{m=M, f=F, a=A}) ->
+verify_to_tpat(#m_verify{m=M, f=F, a=A}) ->
     {M, F, length(A)}. % a trace pattern we can pass to erlang:trace_pattern
 
 %%------------------------------------------------------------
@@ -153,9 +153,9 @@ is_mock_expr(_Type, _Form) ->
 
 analyze_mock_form([Type, Expr]) ->
     case erl_syntax:atom_value(Type) of
-        m_init       -> analyze_init_expr(Expr);
-        m_when       -> analyze_when_expr(Expr);
-        m_was_called -> analyze_was_called_expr(Expr)
+        m_init   -> analyze_init_expr(Expr);
+        m_when   -> analyze_when_expr(Expr);
+        m_verify -> analyze_verify_expr(Expr)
     end.
 
 analyze_init_expr(Expr) ->
@@ -201,15 +201,15 @@ get_when_call_sig(Clause) ->
     {M, F, A} = analyze_application(Call),
     {M, F, length(A)}.
 
-analyze_was_called_expr(Form) ->
+analyze_verify_expr(Form) ->
     [Case, Criteria] = erl_syntax:tuple_elements(Form),
     [Clause | _] = erl_syntax:case_expr_clauses(Case),
     [Call | _] = erl_syntax:clause_patterns(Clause),
     G = erl_syntax:clause_guard(Clause),
     {M, F, A} = analyze_application(Call),
-    #m_was_called{m=M, f=F, a=A, g=G, crit=erl_syntax:concrete(Criteria)}.
+    #m_verify{m=M, f=F, a=A, g=G, crit=erl_syntax:concrete(Criteria)}.
 
-mk_was_called_checker_fun(Args0, Guard0) ->
+mk_verify_checker_fun(Args0, Guard0) ->
     %% Let's say there's a statement like this:
     %%     N = 42,
     %%     ...

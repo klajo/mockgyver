@@ -10,9 +10,12 @@
 
 -define(WHEN(Expr), ?WRAP(m_when, case x of Expr end)).
 
+-define(VERIFY(Expr, Args),
+        ?WRAP(m_verify, {case x of Expr -> ok end, Args})).
+
 -define(WAS_CALLED(Expr),
         ?WAS_CALLED(Expr, once)).
 -define(WAS_CALLED(Expr, Criteria),
-        ?WRAP(m_was_called, {case x of Expr -> ok end, Criteria})).
+        ?VERIFY(Expr, {was_called, Criteria})).
 
 -endif.

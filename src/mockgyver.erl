@@ -22,7 +22,7 @@
 -export([start_session/1]).
 
 -export([get_action/1, set_action/1]).
--export([was_called/1, was_called/2]).
+-export([verify/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -83,13 +83,10 @@ stop() ->
 start_session(TraceMFAs) ->
     call({start_session, TraceMFAs, self()}).
 
-was_called({M, F, A}) ->
-    was_called({M, F, A}, once).
-
 %% once | {at_least, N} | {at_most, N} | {times, N} | never
-was_called({M, F, A}, Criteria) ->
+verify({M, F, A}, Criteria) ->
     wait_until_trace_delivered(),
-    chk(call({was_called, {M, F, A}, Criteria})).
+    chk(call({verify, {M, F, A}, Criteria})).
 
 
 %%%===================================================================
@@ -135,8 +132,8 @@ handle_call({get_action, MFA}, _From, State) ->
 handle_call({set_action, MFA}, _From, State0) ->
     State = i_set_action(MFA, State0),
     {reply, ok, State};
-handle_call({was_called, MFA, Criteria}, _From, State) ->
-    Reply = i_was_called(MFA, Criteria, State),
+handle_call({verify, MFA, Criteria}, _From, State) ->
+    Reply = i_verify(MFA, Criteria, State),
     {reply, Reply, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -227,7 +224,7 @@ i_end_session(State) ->
 i_reg_call({M, F, A}, #state{calls=Calls} = State) ->
     State#state{calls=[#call{m=M, f=F, a=A} | Calls]}.
 
-i_was_called(MFA, Criteria, State) ->
+i_verify(MFA, {was_called, Criteria}, State) ->
     Matches = get_matches(MFA, State),
     case check_criteria(Criteria, length(Matches)) of
         ok ->
