@@ -18,4 +18,9 @@
 -define(WAS_CALLED(Expr, Criteria),
         ?VERIFY(Expr, {was_called, Criteria})).
 
+-define(WAIT_CALLED(Expr),
+        ?WAIT_CALLED(Expr, once)).
+-define(WAIT_CALLED(Expr, Criteria),
+        ?VERIFY(Expr, {wait_called, Criteria})).
+
 -endif.

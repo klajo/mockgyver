@@ -32,9 +32,10 @@
 
 -define(beam_num_bytes_alignment, 4). %% according to spec below
 
--record(state, {actions=[], calls, mref}).
+-record(state, {actions=[], calls, mref, call_waiters=[]}).
 -record(call, {m, f, a}).
 -record(action, {mfa, func}).
+-record(call_waiter, {from, mfa, crit}).
 
 %-record(trace, {msg}).
 -record('DOWN', {mref, type, obj, info}).
@@ -132,9 +133,18 @@ handle_call({get_action, MFA}, _From, State) ->
 handle_call({set_action, MFA}, _From, State0) ->
     State = i_set_action(MFA, State0),
     {reply, ok, State};
-handle_call({verify, MFA, Criteria}, _From, State) ->
-    Reply = i_verify(MFA, Criteria, State),
+handle_call({verify, MFA, {was_called, Criteria}}, _From, State) ->
+    Reply = get_and_check_matches(MFA, Criteria, State),
     {reply, Reply, State};
+handle_call({verify, MFA, {wait_called, Criteria}}, From, State) ->
+    case get_and_check_matches(MFA, Criteria, State) of
+        {ok, _} = Reply ->
+            {reply, Reply, State};
+        {error, _} ->
+            Waiters = State#state.call_waiters,
+            Waiter  = #call_waiter{from=From, mfa=MFA, crit=Criteria},
+            {noreply, State#state{call_waiters = [Waiter | Waiters]}}
+    end;
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -166,7 +176,8 @@ handle_info(#'DOWN'{mref=MRef}, #state{mref=MRef} = State0) ->
     State = i_end_session(State0),
     {noreply, State};
 handle_info({trace, _, call, MFA}, State0) ->
-    State = i_reg_call(MFA, State0),
+    State1 = i_reg_call(MFA, State0),
+    State  = i_possibly_notify_waiters(State1),
     {noreply, State};
 handle_info(Info, State) ->
     io:format(user, "==> ~p~n", [Info]),
@@ -224,8 +235,22 @@ i_end_session(State) ->
 i_reg_call({M, F, A}, #state{calls=Calls} = State) ->
     State#state{calls=[#call{m=M, f=F, a=A} | Calls]}.
 
-i_verify(MFA, {was_called, Criteria}, State) ->
-    Matches = get_matches(MFA, State),
+i_possibly_notify_waiters(#state{call_waiters=Waiters0} = State) ->
+    Waiters =
+        lists:filter(fun(#call_waiter{from=From, mfa=MFA, crit=Criteria}) ->
+                             case get_and_check_matches(MFA, Criteria, State) of
+                                 {ok, _} = Reply ->
+                                     gen_server:reply(From, Reply),
+                                     false; % remove from waiting list
+                                 {error, _} ->
+                                     true   % keep in waiting list
+                             end
+                     end,
+                     Waiters0),
+    State#state{call_waiters=Waiters}.
+                         
+get_and_check_matches(ExpectMFA, Criteria, State) ->
+    Matches = get_matches(ExpectMFA, State),
     case check_criteria(Criteria, length(Matches)) of
         ok ->
             {ok, Matches};
