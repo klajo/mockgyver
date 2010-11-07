@@ -10,7 +10,8 @@
 
 -define(WHEN(Expr), ?WRAP(m_when, case x of Expr end)).
 
-%-define(WAS_CALLED(Expr),           ?WRAP(m_was_called, {Expr, once))).
+-define(WAS_CALLED(Expr),
+        ?WAS_CALLED(Expr, once)).
 -define(WAS_CALLED(Expr, Criteria),
         ?WRAP(m_was_called, {case x of Expr -> ok end, Criteria})).
 

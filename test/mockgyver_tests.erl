@@ -24,6 +24,7 @@ mock_test_() ->
           fun traces_multi_args/0,
           fun traces_in_separate_process/0,
           fun traces_in_separate_process/0,
+          fun was_called_defaults_to_once/0,
           fun matches_called_arguments/0,
           fun allows_was_called_guards/0,
           fun allows_was_called_guards_with_variables_not_used_in_args_list/0,
@@ -58,6 +59,12 @@ traces_in_separate_process() ->
     MRef = erlang:monitor(process, Pid),
     receive {'DOWN',MRef,_,_,_} -> ok end,
     ?WAS_CALLED(mockgyver_dummy:return_arg(_), once).
+
+was_called_defaults_to_once() ->
+    mockgyver_dummy:return_arg(1),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_)),
+    mockgyver_dummy:return_arg(1),
+    ?assertError(_, ?WAS_CALLED(mockgyver_dummy:return_arg(_))).
 
 matches_called_arguments() ->
     N = 42,
