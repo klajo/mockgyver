@@ -314,10 +314,14 @@ mock_and_load_mods(Mods) ->
     lists:foreach(fun mock_and_load_mod/1, Mods).
 
 mock_and_load_mod(Mod) ->
-    ExportedFAs = get_exported_fas(Mod),
-    OrigMod = reload_mod_under_different_name(Mod),
-    mk_mocking_mod(Mod, OrigMod, ExportedFAs),
-    ok.
+    case get_exported_fas(Mod) of
+        {ok, ExportedFAs} ->
+            OrigMod = reload_mod_under_different_name(Mod),
+            mk_mocking_mod(Mod, OrigMod, ExportedFAs),
+            ok;
+        {error, {no_such_module, Mod}} ->
+            erlang:error({cant_mock_non_existing_module, Mod})
+    end.
 
 reload_mod_under_different_name(Mod) ->
     {module, Mod} = code:ensure_loaded(Mod),
@@ -384,16 +388,26 @@ unload_mods(Mods) ->
     lists:foreach(fun unload_mod/1, Mods).
 
 unload_mod(Mod) ->
-    code:purge(Mod),
-    true = code:delete(Mod).
+    case code:is_loaded(Mod) of
+        {file, _} ->
+            code:purge(Mod),
+            true = code:delete(Mod);
+        false ->
+            ok
+    end.
 
 get_unique_mods_by_mfas(MFAs) ->
     lists:usort([M || {M,_F,_A} <- MFAs]).
 
 get_exported_fas(Mod) ->
-    [FA || FA <- Mod:module_info(exports),
-           FA =/= {module_info, 0},
-           FA =/= {module_info, 1}].
+    try
+        {ok, [FA || FA <- Mod:module_info(exports),
+                    FA =/= {module_info, 0},
+                    FA =/= {module_info, 1}]}
+    catch
+        error:undef ->
+            {error, {no_such_module, Mod}}
+    end.
 
 %%-------------------------------------------------------------------
 %% Rename a module which is already compiled.
