@@ -213,7 +213,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 call(Msg) ->
-    gen_server:call(?SERVER, Msg).
+    gen_server:call(?SERVER, Msg, infinity).
 
 i_start_session(MFAs, Pid, State) ->
     erlang:trace(all, true, [call, {tracer, self()}]),
