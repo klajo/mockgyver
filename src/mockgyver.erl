@@ -50,8 +50,12 @@ exec(MockMFAs, TraceMFAs, Fun) ->
         {ok, _} ->
             try
                 mock_and_load_mods(MockMods),
-                start_session(TraceMFAs),
-                Fun()
+                case start_session(TraceMFAs) of
+                    ok ->
+                        Fun();
+                    {error, _} = Error ->
+                        erlang:error(Error)
+                end
             after
                 unload_mods(MockMods),
                 stop()
@@ -125,8 +129,8 @@ init([]) ->
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call({start_session, TraceMFAs, Pid}, _From, State0) ->
-    State = i_start_session(TraceMFAs, Pid, State0),
-    {reply, ok, State};
+    {Reply, State} = i_start_session(TraceMFAs, Pid, State0),
+    {reply, Reply, State};
 handle_call({get_action, MFA}, _From, State) ->
     ActionFun = i_get_action(MFA, State),
     {reply, ActionFun, State};
@@ -217,16 +221,35 @@ call(Msg) ->
 
 i_start_session(MFAs, Pid, State) ->
     erlang:trace(all, true, [call, {tracer, self()}]),
-    lists:foreach(fun({M,_F,_A} = MFA) ->
-                          %% Ensure the module is loaded, otherwise
-                          %% the trace_pattern won't match anything
-                          %% and we won't get any traces.
-                          {module, _} = code:ensure_loaded(M),
-                          1 = erlang:trace_pattern(MFA, true, [local])
-                  end,
-                  MFAs),
-    MRef = erlang:monitor(process, Pid),
-    State#state{calls=[], mref=MRef}.
+    case setup_trace_on_all_mfas(MFAs) of
+        ok ->
+            MRef = erlang:monitor(process, Pid),
+            {ok, State#state{calls=[], mref=MRef}};
+        {error, _}=Error ->
+            {Error, i_end_session(State)}
+    end.
+
+setup_trace_on_all_mfas(MFAs) ->
+    lists:foldl(fun({M,_F,_A} = MFA, ok) ->
+                        %% Ensure the module is loaded, otherwise
+                        %% the trace_pattern won't match anything
+                        %% and we won't get any traces.
+                        case code:ensure_loaded(M) of
+                            {module, _} ->
+                                case erlang:trace_pattern(MFA, true, [local]) of
+                                    0 ->
+                                        {error, {undef, MFA}};
+                                    _ ->
+                                        ok
+                                end;
+                            {error, Reason} ->
+                                {error, {failed_to_load_module, M, Reason}}
+                        end;
+                   (_MFA, {error, _} = Error) ->
+                        Error
+                end,
+                ok,
+                MFAs).
 
 i_end_session(State) ->
     erlang:trace(all, false, [call, {tracer, self()}]),
