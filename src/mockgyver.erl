@@ -16,10 +16,10 @@
 %% API
 -export([exec/3]).
 
--export([start_link/0]).
+-export([start/0]).
 -export([stop/0]).
 
--export([start_session/1]).
+-export([start_session/2]).
 
 -export([get_action/1, set_action/1]).
 -export([verify/2]).
@@ -32,7 +32,8 @@
 
 -define(beam_num_bytes_alignment, 4). %% according to spec below
 
--record(state, {actions=[], calls, mref, call_waiters=[]}).
+-record(state, {actions=[], calls, parent_mref, session_mref, call_waiters=[],
+                mock_mfas=[], trace_mfas=[]}).
 -record(call, {m, f, a}).
 -record(action, {mfa, func}).
 -record(call_waiter, {from, mfa, crit}).
@@ -45,19 +46,16 @@
 %%%===================================================================
 
 exec(MockMFAs, TraceMFAs, Fun) ->
-    MockMods = get_unique_mods_by_mfas(MockMFAs),
-    case start_link() of
+    case start() of
         {ok, _} ->
             try
-                mock_and_load_mods(MockMods),
-                case start_session(TraceMFAs) of
+                case start_session(MockMFAs, TraceMFAs) of
                     ok ->
                         Fun();
                     {error, _} = Error ->
                         erlang:error(Error)
                 end
             after
-                unload_mods(MockMods),
                 stop()
             end;
         {error, {already_started, _}} ->
@@ -76,17 +74,18 @@ set_action(MFA) ->
 %% @doc
 %% Starts the server
 %%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @spec start() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start() ->
+    Parent = self(),
+    gen_server:start({local, ?SERVER}, ?MODULE, {Parent}, []).
 
 stop() ->
     call(stop).
 
-start_session(TraceMFAs) ->
-    call({start_session, TraceMFAs, self()}).
+start_session(MockMFAs, TraceMFAs) ->
+    call({start_session, MockMFAs, TraceMFAs, self()}).
 
 %% once | {at_least, N} | {at_most, N} | {times, N} | never
 verify({M, F, A}, Criteria) ->
@@ -109,8 +108,9 @@ verify({M, F, A}, Criteria) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
-    {ok, #state{}}.
+init({Parent}) ->
+    MRef = erlang:monitor(process, Parent),
+    {ok, #state{parent_mref=MRef}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -128,8 +128,8 @@ init([]) ->
 %%--------------------------------------------------------------------
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
-handle_call({start_session, TraceMFAs, Pid}, _From, State0) ->
-    {Reply, State} = i_start_session(TraceMFAs, Pid, State0),
+handle_call({start_session, MockMFAs, TraceMFAs, Pid}, _From, State0) ->
+    {Reply, State} = i_start_session(MockMFAs, TraceMFAs, Pid, State0),
     {reply, Reply, State};
 handle_call({get_action, MFA}, _From, State) ->
     ActionFun = i_get_action(MFA, State),
@@ -176,7 +176,9 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(#'DOWN'{mref=MRef}, #state{mref=MRef} = State0) ->
+handle_info(#'DOWN'{mref=MRef}, #state{parent_mref=MRef} = State) ->
+    {stop, normal, State#state{parent_mref=undefined}};
+handle_info(#'DOWN'{mref=MRef}, #state{session_mref=MRef} = State0) ->
     State = i_end_session(State0),
     {noreply, State};
 handle_info({trace, _, call, MFA}, State0) ->
@@ -219,14 +221,21 @@ code_change(_OldVsn, State, _Extra) ->
 call(Msg) ->
     gen_server:call(?SERVER, Msg, infinity).
 
-i_start_session(MFAs, Pid, State) ->
-    erlang:trace(all, true, [call, {tracer, self()}]),
-    case setup_trace_on_all_mfas(MFAs) of
+i_start_session(MockMFAs, TraceMFAs, Pid, State0) ->
+    State = State0#state{mock_mfas=MockMFAs, trace_mfas=TraceMFAs},
+    case mock_and_load_mods(get_unique_mods_by_mfas(MockMFAs)) of
         ok ->
-            MRef = erlang:monitor(process, Pid),
-            {ok, State#state{calls=[], mref=MRef}};
-        {error, _}=Error ->
-            {Error, i_end_session(State)}
+            erlang:trace(all, true, [call, {tracer, self()}]),
+            case setup_trace_on_all_mfas(TraceMFAs) of
+                ok ->
+                    MRef = erlang:monitor(process, Pid),
+                    {ok, State#state{calls=[],
+                                     session_mref=MRef}};
+                {error, _}=Error ->
+                    {Error, i_end_session(State)}
+            end;
+        {error, _} = Error ->
+            {Error, State0}
     end.
 
 setup_trace_on_all_mfas(MFAs) ->
@@ -251,9 +260,10 @@ setup_trace_on_all_mfas(MFAs) ->
                 ok,
                 MFAs).
 
-i_end_session(State) ->
+i_end_session(#state{mock_mfas=MockMFAs} = State) ->
+    unload_mods(get_unique_mods_by_mfas(MockMFAs)),
     erlang:trace(all, false, [call, {tracer, self()}]),
-    State#state{mref=undefined}.
+    State#state{session_mref=undefined, mock_mfas=[], trace_mfas=[]}.
 
 i_reg_call({M, F, A}, #state{calls=Calls} = State) ->
     State#state{calls=[#call{m=M, f=F, a=A} | Calls]}.
@@ -334,7 +344,11 @@ chk({ok, Value})     -> Value;
 chk({error, Reason}) -> erlang:error(Reason).
 
 mock_and_load_mods(Mods) ->
-    lists:foreach(fun mock_and_load_mod/1, Mods).
+    lists:foldl(fun(Mod, ok)     -> mock_and_load_mod(Mod);
+                   (_Mod, Error) -> Error
+                end,
+                ok,
+                Mods).
 
 mock_and_load_mod(Mod) ->
     case get_exported_fas(Mod) of
@@ -343,7 +357,7 @@ mock_and_load_mod(Mod) ->
             mk_mocking_mod(Mod, OrigMod, ExportedFAs),
             ok;
         {error, {no_such_module, Mod}} ->
-            erlang:error({cant_mock_non_existing_module, Mod})
+            {error, {cant_mock_non_existing_module, Mod}}
     end.
 
 reload_mod_under_different_name(Mod) ->
