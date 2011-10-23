@@ -355,8 +355,7 @@ check_criteria_value({at_most, N}, X) when X =< N  -> ok;
 check_criteria_value({times, N}, N)                -> ok;
 check_criteria_value(never, 0)                     -> ok;
 check_criteria_value(Criteria, N) ->
-    {error, {criteria_not_fulfilled, Criteria, N}}.
-
+    {error, {criteria_not_fulfilled, {expected, Criteria}, {actual, N}}}.
 
 i_get_action(MFA, #state{actions=Actions}) ->
     case lists:keysearch(MFA, #action.mfa, Actions) of
