@@ -311,7 +311,9 @@ is_match({CallM,CallF,CallA}, {ExpectM,ExpectF,ExpectA}) when CallM==ExpectM,
             false;
         error:{badmatch, _} ->   % when previously bound vars don't match
             false
-    end.
+    end;
+is_match(_CallMFA, _ExpectMFA) ->
+    false.
 
 check_criteria(Criteria, N) ->
     case check_criteria_syntax(Criteria) of

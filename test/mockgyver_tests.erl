@@ -31,6 +31,7 @@ mock_test_() ->
           fun returns_called_arguments/0,
           fun allows_variables_in_criteria/0,
           fun returns_error_on_invalid_criteria/0,
+          fun checks_that_two_different_functions_are_called/0,
           fun returns_immediately_if_waiters_criteria_already_fulfilled/0,
           fun waits_until_waiters_criteria_fulfilled/0,
           fun returns_other_value/0,
@@ -110,6 +111,12 @@ returns_error_on_invalid_criteria() ->
        {at_least, x},
        {at_most, x},
        {times, x}]).
+
+checks_that_two_different_functions_are_called() ->
+    mockgyver_dummy:return_arg(1),
+    mockgyver_dummy:return_arg2(1),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(1), once),
+    ?WAS_CALLED(mockgyver_dummy:return_arg2(1), once).
 
 returns_immediately_if_waiters_criteria_already_fulfilled() ->
     mockgyver_dummy:return_arg(1),
