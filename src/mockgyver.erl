@@ -301,7 +301,7 @@ i_possibly_notify_waiters(#state{call_waiters=Waiters0} = State) ->
                      end,
                      Waiters0),
     State#state{call_waiters=Waiters}.
-                         
+
 get_and_check_matches(ExpectMFA, Criteria, State) ->
     Matches = get_matches(ExpectMFA, State),
     case check_criteria(Criteria, length(Matches)) of
@@ -631,8 +631,8 @@ replace_in_atab(<<C, Rest/binary>>, Name) ->
 %% BinSize to be an even multiple of ?beam_num_bytes_alignment.
 num_pad_bytes(BinSize) ->
     case ?beam_num_bytes_alignment - (BinSize rem ?beam_num_bytes_alignment) of
-	4 -> 0;
-	N -> N
+        4 -> 0;
+        N -> N
     end.
 
 %% Update the size within the top-level form

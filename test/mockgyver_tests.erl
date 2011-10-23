@@ -58,7 +58,7 @@ only_allows_one_mock_at_a_time_test() ->
 
 fetch_n_msgs(0) -> [];
 fetch_n_msgs(N) -> [receive M -> M end | fetch_n_msgs(N-1)].
-             
+
 check_no_simultaneous_mockers_outside([{mock_start, Pid} | Msgs]) ->
     check_no_simultaneous_mockers_inside(Msgs, Pid);
 check_no_simultaneous_mockers_outside([]) ->
