@@ -147,10 +147,12 @@ handle_call({verify, MFA, {wait_called, Criteria}}, From, State) ->
     case get_and_check_matches(MFA, Criteria, State) of
         {ok, _} = Reply ->
             {reply, Reply, State};
-        {error, _} ->
+        {error, {criteria_not_fulfilled, _, _}} ->
             Waiters = State#state.call_waiters,
             Waiter  = #call_waiter{from=From, mfa=MFA, crit=Criteria},
-            {noreply, State#state{call_waiters = [Waiter | Waiters]}}
+            {noreply, State#state{call_waiters = [Waiter | Waiters]}};
+        {error, _} = Error ->
+            {reply, Error, State}
     end;
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
