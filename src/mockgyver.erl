@@ -313,12 +313,26 @@ is_match({CallM,CallF,CallA}, {ExpectM,ExpectF,ExpectA}) when CallM==ExpectM,
             false
     end.
 
-check_criteria(once, 1)                      -> ok;
-check_criteria({at_least, N}, X) when X >= N -> ok;
-check_criteria({at_most, N}, X) when X =< N  -> ok;
-check_criteria({times, N}, N)                -> ok;
-check_criteria(never, 0)                     -> ok;
 check_criteria(Criteria, N) ->
+    case check_criteria_syntax(Criteria) of
+        ok               -> check_criteria_value(Criteria, N);
+        {error, _}=Error -> Error
+    end.
+
+check_criteria_syntax(once)                             -> ok;
+check_criteria_syntax({at_least, N}) when is_integer(N) -> ok;
+check_criteria_syntax({at_most, N}) when is_integer(N)  -> ok;
+check_criteria_syntax({times, N}) when is_integer(N)    -> ok;
+check_criteria_syntax(never)                            -> ok;
+check_criteria_syntax(Criteria) ->
+    {error, {invalid_criteria, Criteria}}.
+
+check_criteria_value(once, 1)                      -> ok;
+check_criteria_value({at_least, N}, X) when X >= N -> ok;
+check_criteria_value({at_most, N}, X) when X =< N  -> ok;
+check_criteria_value({times, N}, N)                -> ok;
+check_criteria_value(never, 0)                     -> ok;
+check_criteria_value(Criteria, N) ->
     {error, {criteria_not_fulfilled, Criteria, N}}.
 
 
