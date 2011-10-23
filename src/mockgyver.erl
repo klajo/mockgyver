@@ -32,8 +32,8 @@
 
 -define(beam_num_bytes_alignment, 4). %% according to spec below
 
--record(state, {actions=[], calls, session_mref, call_waiters=[],
-                mock_mfas=[], trace_mfas=[]}).
+-record(state, {actions=[], calls, session_mref, session_waiters=queue:new(),
+                call_waiters=[], mock_mfas=[], trace_mfas=[]}).
 -record(call, {m, f, a}).
 -record(action, {mfa, func}).
 -record(call_waiter, {from, mfa, crit}).
@@ -119,13 +119,17 @@ init({}) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call(stop, _From, State) ->
-    {stop, normal, ok, State};
-handle_call({start_session, MockMFAs, TraceMFAs, Pid}, _From, State0) ->
-    {Reply, State} = i_start_session(MockMFAs, TraceMFAs, Pid, State0),
-    {reply, Reply, State};
+handle_call({start_session, MockMFAs, TraceMFAs, Pid}, From, State0) ->
+    case is_within_session(State0) of
+        false ->
+            {Reply, State} = i_start_session(MockMFAs, TraceMFAs, Pid, State0),
+            {reply, Reply, State};
+        true ->
+            {noreply, enqueue_session({From, MockMFAs, TraceMFAs, Pid}, State0)}
+    end;
 handle_call(end_session, _From, State0) ->
-    State = i_end_session(State0),
+    State1 = i_end_session(State0),
+    State = possibly_dequeue_session(State1),
     {reply, ok, State};
 handle_call({get_action, MFA}, _From, State) ->
     ActionFun = i_get_action(MFA, State),
@@ -145,9 +149,26 @@ handle_call({verify, MFA, {wait_called, Criteria}}, From, State) ->
             Waiter  = #call_waiter{from=From, mfa=MFA, crit=Criteria},
             {noreply, State#state{call_waiters = [Waiter | Waiters]}}
     end;
+handle_call(stop, _From, State) ->
+    {stop, normal, ok, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
+
+is_within_session(#state{session_mref=MRef}) -> MRef =/= undefined.
+
+enqueue_session(Session, #state{session_waiters=Waiters}=State) ->
+    State#state{session_waiters=queue:in(Session, Waiters)}.
+
+possibly_dequeue_session(#state{session_waiters=Waiters0}=State0) ->
+    case queue:out(Waiters0) of
+        {{value, {From, MockMFAs, TraceMFAs, Pid}}, Waiters} ->
+            {Reply, State} = i_start_session(MockMFAs, TraceMFAs, Pid, State0),
+            gen_server:reply(From, Reply),
+            State#state{session_waiters=Waiters};
+        {empty, _} ->
+            State0
+    end.
 
 %%--------------------------------------------------------------------
 %% @private

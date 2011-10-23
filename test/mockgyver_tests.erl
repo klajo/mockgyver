@@ -42,6 +42,31 @@ mock_test_() ->
           fun can_use_multi_clause_functions/0],
     [{spawn, fun() -> ?MOCK(T) end} || T <- Ts].
 
+only_allows_one_mock_at_a_time_test() ->
+    NumMockers = 10,
+    Parent = self(),
+    Mocker = fun() ->
+                     ?MOCK(fun() ->
+                                   Parent ! {mock_start, self()},
+                                   timer:sleep(5),
+                                   Parent ! {mock_end, self()}
+                           end)
+        end,
+    [proc_lib:spawn(Mocker) || _ <- lists:seq(1, NumMockers)], % spawn mockers
+    Msgs = fetch_n_msgs(NumMockers*2),
+    check_no_simultaneous_mockers_outside(Msgs).
+
+fetch_n_msgs(0) -> [];
+fetch_n_msgs(N) -> [receive M -> M end | fetch_n_msgs(N-1)].
+             
+check_no_simultaneous_mockers_outside([{mock_start, Pid} | Msgs]) ->
+    check_no_simultaneous_mockers_inside(Msgs, Pid);
+check_no_simultaneous_mockers_outside([]) ->
+    ok.
+
+check_no_simultaneous_mockers_inside([{mock_end, Pid} | Msgs], Pid) ->
+    check_no_simultaneous_mockers_outside(Msgs).
+
 traces_single_arg() ->
     1 = mockgyver_dummy:return_arg(1),
     2 = mockgyver_dummy:return_arg(2),
