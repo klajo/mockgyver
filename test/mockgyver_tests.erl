@@ -40,7 +40,7 @@ mock_test_() ->
           fun inherits_variables_from_outer_scope/0,
           fun can_use_params/0,
           fun can_use_multi_clause_functions/0],
-    [fun() -> ?MOCK(T) end || T <- Ts].
+    [{spawn, fun() -> ?MOCK(T) end} || T <- Ts].
 
 traces_single_arg() ->
     1 = mockgyver_dummy:return_arg(1),

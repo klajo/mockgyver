@@ -1,6 +1,6 @@
 %%%-------------------------------------------------------------------
 %%% @author Klas Johansson klas.johansson@gmail.com
-%%% @copyright (C) 2010, Klas Johansson
+%%% @copyright (C) 2011, Klas Johansson
 %%% @doc
 %%%
 %%% @end
@@ -16,7 +16,7 @@
 %% API
 -export([exec/3]).
 
--export([start/0]).
+-export([start_link/0]).
 -export([stop/0]).
 
 -export([start_session/2]).
@@ -32,7 +32,7 @@
 
 -define(beam_num_bytes_alignment, 4). %% according to spec below
 
--record(state, {actions=[], calls, parent_mref, session_mref, call_waiters=[],
+-record(state, {actions=[], calls, session_mref, call_waiters=[],
                 mock_mfas=[], trace_mfas=[]}).
 -record(call, {m, f, a}).
 -record(action, {mfa, func}).
@@ -46,22 +46,14 @@
 %%%===================================================================
 
 exec(MockMFAs, TraceMFAs, Fun) ->
-    case start() of
-        {ok, _} ->
-            try
-                case start_session(MockMFAs, TraceMFAs) of
-                    ok ->
-                        Fun();
-                    {error, _} = Error ->
-                        erlang:error(Error)
-                end
-            after
-                stop()
-            end;
-        {error, {already_started, _}} ->
-            erlang:error(nestling_mocks_is_not_allowed);
-        {error, Reason} ->
-            erlang:error({failed_to_mock, Reason})
+    ok = ensure_application_started(),
+    try
+        case start_session(MockMFAs, TraceMFAs) of
+            ok                 -> Fun();
+            {error, _} = Error -> erlang:error(Error)
+        end
+    after
+        end_session()
     end.
 
 get_action(MFA) ->
@@ -70,22 +62,24 @@ get_action(MFA) ->
 set_action(MFA) ->
     call({set_action, MFA}).
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start() -> {ok, Pid} | ignore | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
-start() ->
-    Parent = self(),
-    gen_server:start({local, ?SERVER}, ?MODULE, {Parent}, []).
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
 stop() ->
     call(stop).
 
+ensure_application_started() ->
+    case application:start(?MODULE) of
+        ok                            -> ok;
+        {error, {already_started, _}} -> ok;
+        {error, _} = Error            -> Error
+    end.
+
 start_session(MockMFAs, TraceMFAs) ->
     call({start_session, MockMFAs, TraceMFAs, self()}).
+
+end_session() ->
+    call(end_session).
 
 %% once | {at_least, N} | {at_most, N} | {times, N} | never
 verify({M, F, A}, Criteria) ->
@@ -108,9 +102,8 @@ verify({M, F, A}, Criteria) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init({Parent}) ->
-    MRef = erlang:monitor(process, Parent),
-    {ok, #state{parent_mref=MRef}}.
+init({}) ->
+    {ok, #state{}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -131,6 +124,9 @@ handle_call(stop, _From, State) ->
 handle_call({start_session, MockMFAs, TraceMFAs, Pid}, _From, State0) ->
     {Reply, State} = i_start_session(MockMFAs, TraceMFAs, Pid, State0),
     {reply, Reply, State};
+handle_call(end_session, _From, State0) ->
+    State = i_end_session(State0),
+    {reply, ok, State};
 handle_call({get_action, MFA}, _From, State) ->
     ActionFun = i_get_action(MFA, State),
     {reply, ActionFun, State};
@@ -176,8 +172,6 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(#'DOWN'{mref=MRef}, #state{parent_mref=MRef} = State) ->
-    {stop, normal, State#state{parent_mref=undefined}};
 handle_info(#'DOWN'{mref=MRef}, #state{session_mref=MRef} = State0) ->
     State = i_end_session(State0),
     {noreply, State};
@@ -186,7 +180,7 @@ handle_info({trace, _, call, MFA}, State0) ->
     State  = i_possibly_notify_waiters(State1),
     {noreply, State};
 handle_info(Info, State) ->
-    io:format(user, "==> ~p~n", [Info]),
+    io:format(user, "~p got message: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -260,10 +254,12 @@ setup_trace_on_all_mfas(MFAs) ->
                 ok,
                 MFAs).
 
-i_end_session(#state{mock_mfas=MockMFAs} = State) ->
+i_end_session(#state{mock_mfas=MockMFAs, session_mref=MRef} = State) ->
     unload_mods(get_unique_mods_by_mfas(MockMFAs)),
     erlang:trace(all, false, [call, {tracer, self()}]),
-    State#state{session_mref=undefined, mock_mfas=[], trace_mfas=[]}.
+    erlang:demonitor(MRef, [flush]),
+    State#state{actions=[], calls=[], session_mref=undefined, call_waiters=[],
+                mock_mfas=[], trace_mfas=[]}.
 
 i_reg_call({M, F, A}, #state{calls=Calls} = State) ->
     State#state{calls=[#call{m=M, f=F, a=A} | Calls]}.
