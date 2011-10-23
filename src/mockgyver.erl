@@ -63,7 +63,7 @@ get_action(MFA) ->
     call({get_action, MFA}).
 
 set_action(MFA) ->
-    call({set_action, MFA}).
+    chk(call({set_action, MFA})).
 
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
@@ -138,8 +138,8 @@ handle_call({get_action, MFA}, _From, State) ->
     ActionFun = i_get_action(MFA, State),
     {reply, ActionFun, State};
 handle_call({set_action, MFA}, _From, State0) ->
-    State = i_set_action(MFA, State0),
-    {reply, ok, State};
+    {Reply, State} = i_set_action(MFA, State0),
+    {reply, Reply, State};
 handle_call({verify, MFA, {was_called, Criteria}}, _From, State) ->
     Reply = get_and_check_matches(MFA, Criteria, State),
     {reply, Reply, State};
@@ -366,9 +366,14 @@ i_get_action(MFA, #state{actions=Actions}) ->
 i_set_action({M, F, ActionFun}, #state{actions=Actions0} = State) ->
     {arity, A} = erlang:fun_info(ActionFun, arity),
     MFA = {M, F, A},
-    Actions = lists:keystore(MFA, #action.mfa, Actions0,
-                             #action{mfa=MFA, func=ActionFun}),
-    State#state{actions=Actions}.
+    case erlang:is_builtin(M, F, A) of
+        true ->
+            {{error, {cannot_mock_bif, MFA}}, State};
+        false ->
+            Actions = lists:keystore(MFA, #action.mfa, Actions0,
+                                     #action{mfa=MFA, func=ActionFun}),
+            {ok, State#state{actions=Actions}}
+    end.
 
 wait_until_trace_delivered() ->
     Ref = erlang:trace_delivered(all),
@@ -386,7 +391,7 @@ mock_and_load_mods(Mods) ->
                 Mods).
 
 mock_and_load_mod(Mod) ->
-    case get_exported_fas(Mod) of
+    case get_exported_non_bif_fas(Mod) of
         {ok, ExportedFAs} ->
             OrigMod = reload_mod_under_different_name(Mod),
             mk_mocking_mod(Mod, OrigMod, ExportedFAs),
@@ -471,11 +476,12 @@ unload_mod(Mod) ->
 get_unique_mods_by_mfas(MFAs) ->
     lists:usort([M || {M,_F,_A} <- MFAs]).
 
-get_exported_fas(Mod) ->
+get_exported_non_bif_fas(Mod) ->
     try
-        {ok, [FA || FA <- Mod:module_info(exports),
-                    FA =/= {module_info, 0},
-                    FA =/= {module_info, 1}]}
+        {ok, [{F, A} || {F, A} <- Mod:module_info(exports),
+                        {F, A} =/= {module_info, 0},
+                        {F, A} =/= {module_info, 1},
+                        not erlang:is_builtin(Mod, F, A)]}
     catch
         error:undef ->
             {error, {no_such_module, Mod}}

@@ -39,7 +39,8 @@ mock_test_() ->
           fun can_change_return_value/0,
           fun inherits_variables_from_outer_scope/0,
           fun can_use_params/0,
-          fun can_use_multi_clause_functions/0],
+          fun can_use_multi_clause_functions/0,
+          fun fails_gracefully_when_mocking_a_bif/0],
     [{spawn, fun() -> ?MOCK(T) end} || T <- Ts].
 
 only_allows_one_mock_at_a_time_test() ->
@@ -210,3 +211,13 @@ can_use_multi_clause_functions() ->
           mockgyver_dummy:return_arg(_N)            -> negative),
     positive = mockgyver_dummy:return_arg(1),
     negative = mockgyver_dummy:return_arg(-1).
+
+fails_gracefully_when_mocking_a_bif() ->
+    %% pi/0 should be successfully mocked -- it's a regular function
+    ?WHEN(math:pi() -> 4),
+    4 = math:pi(),
+    %% cos/1 should still work (uses the bif)
+    1.0 = math:cos(0),
+    %% mocking the bif should fail gracefully
+    ?assertError({cannot_mock_bif, {math, cos, 1}}, ?WHEN(math:cos(_) -> 0)).
+    
