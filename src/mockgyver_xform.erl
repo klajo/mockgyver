@@ -113,7 +113,7 @@ rewrite_verify_stmts_2(Type, Form0, _Ctxt, Acc) ->
                        fun() ->
                                mockgyver:verify(
                                  {{'$var', M}, {'$var', F}, {'$form', Fun}},
-                                 {'$var', C})
+                                 {'$form', C})
                        end),
             Afters = [],
             {Befores, Form, Afters, false, Acc};
@@ -207,7 +207,7 @@ analyze_verify_expr(Form) ->
     [Call | _] = erl_syntax:clause_patterns(Clause),
     G = erl_syntax:clause_guard(Clause),
     {M, F, A} = analyze_application(Call),
-    #m_verify{m=M, f=F, a=A, g=G, crit=erl_syntax:concrete(Criteria)}.
+    #m_verify{m=M, f=F, a=A, g=G, crit=erl_syntax:revert(Criteria)}.
 
 mk_verify_checker_fun(Args0, Guard0) ->
     %% Let's say there's a statement like this:

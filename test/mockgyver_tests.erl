@@ -29,6 +29,7 @@ mock_test_() ->
           fun allows_was_called_guards/0,
           fun allows_was_called_guards_with_variables_not_used_in_args_list/0,
           fun returns_called_arguments/0,
+          fun allows_variables_in_criteria/0,
           fun returns_immediately_if_waiters_criteria_already_fulfilled/0,
           fun waits_until_waiters_criteria_fulfilled/0,
           fun returns_other_value/0,
@@ -92,6 +93,10 @@ returns_called_arguments() ->
     mockgyver_dummy:return_arg(1),
     mockgyver_dummy:return_arg(2),
     [[1], [2]] = ?WAS_CALLED(mockgyver_dummy:return_arg(N), {times, 2}).
+
+allows_variables_in_criteria() ->
+    C = {times, 0},
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_), C).
 
 returns_immediately_if_waiters_criteria_already_fulfilled() ->
     mockgyver_dummy:return_arg(1),
