@@ -423,7 +423,7 @@ mock_and_load_mod(Mod) ->
 reload_mod_under_different_name(Mod) ->
     {module, Mod} = code:ensure_loaded(Mod),
     {Mod, OrigBin0, Filename} = code:get_object_code(Mod),
-    OrigMod = list_to_atom("^"++atom_to_list(Mod)),
+    OrigMod = list_to_atom(atom_to_list(Mod)++"^"),
     OrigBin = rename(OrigBin0, OrigMod),
     unload_mod(Mod),
     {module, OrigMod} = code:load_binary(OrigMod, Filename, OrigBin),

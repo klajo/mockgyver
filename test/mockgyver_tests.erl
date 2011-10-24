@@ -42,7 +42,8 @@ mock_test_() ->
           fun inherits_variables_from_outer_scope/0,
           fun can_use_params/0,
           fun can_use_multi_clause_functions/0,
-          fun fails_gracefully_when_mocking_a_bif/0],
+          fun fails_gracefully_when_mocking_a_bif/0,
+          fun can_call_original_module/0],
     [{spawn, fun() -> ?MOCK(T) end} || T <- Ts].
 
 only_allows_one_mock_at_a_time_test() ->
@@ -234,3 +235,7 @@ fails_gracefully_when_mocking_a_bif() ->
     1.0 = math:cos(0),
     %% mocking the bif should fail gracefully
     ?assertError({cannot_mock_bif, {math, cos, 1}}, ?WHEN(math:cos(_) -> 0)).
+
+can_call_original_module() ->
+    ?WHEN(mockgyver_dummy:return_arg(N) -> 2*'mockgyver_dummy^':return_arg(N)),
+    6 = mockgyver_dummy:return_arg(3).
