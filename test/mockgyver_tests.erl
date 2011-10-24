@@ -6,6 +6,8 @@
 
 -compile(export_all).
 
+-record('DOWN', {mref, type, obj, info}).
+
 %% was_called_test() ->
 %%     mockgyver:start_link(),
 %%     mockgyver:start_session([{x, test, 1}]),
@@ -53,9 +55,21 @@ only_allows_one_mock_at_a_time_test() ->
                                    Parent ! {mock_end, self()}
                            end)
         end,
-    [proc_lib:spawn(Mocker) || _ <- lists:seq(1, NumMockers)], % spawn mockers
+    Mockers = [proc_lib:spawn(Mocker) || _ <- lists:seq(1, NumMockers)],
+    wait_until_mockers_terminate(Mockers),
     Msgs = fetch_n_msgs(NumMockers*2),
     check_no_simultaneous_mockers_outside(Msgs).
+
+wait_until_mockers_terminate([Pid | Pids]) ->
+    MRef = erlang:monitor(process, Pid),
+    receive
+        #'DOWN'{mref=MRef, info=Info} when Info==normal; Info==noproc ->
+            wait_until_mockers_terminate(Pids);
+        #'DOWN'{mref=MRef, info=Info} ->
+            erlang:error({mocker_terminated_abnormally, Pid, Info})
+    end;
+wait_until_mockers_terminate([]) ->
+    ok.
 
 fetch_n_msgs(0) -> [];
 fetch_n_msgs(N) -> [receive M -> M end | fetch_n_msgs(N-1)].
@@ -220,4 +234,3 @@ fails_gracefully_when_mocking_a_bif() ->
     1.0 = math:cos(0),
     %% mocking the bif should fail gracefully
     ?assertError({cannot_mock_bif, {math, cos, 1}}, ?WHEN(math:cos(_) -> 0)).
-    
