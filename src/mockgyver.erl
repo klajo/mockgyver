@@ -198,7 +198,15 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(#'DOWN'{mref=MRef}, #state{session_mref=MRef} = State0) ->
+handle_info(#'DOWN'{mref=MRef}, #state{session_mref=MRef,
+                                       call_waiters=Waiters,
+                                       calls=Calls}=State0) ->
+    %% The test died before it got a chance to clean up after itself.
+    %% Check whether there are any pending waiters.  If so, just print
+    %% the calls we've logged so far.  Hopefully that helps in
+    %% debugging.  This is probably the best we can accomplish -- being
+    %% able to fail the eunit test would be nice.  Another day perhaps.
+    possibly_print_call_waiters(Waiters, Calls),
     State = i_end_session(State0),
     {noreply, State};
 handle_info({trace, _, call, MFA}, State0) ->
@@ -208,6 +216,14 @@ handle_info({trace, _, call, MFA}, State0) ->
 handle_info(Info, State) ->
     io:format(user, "~p got message: ~p~n", [?MODULE, Info]),
     {noreply, State}.
+
+possibly_print_call_waiters([], _Calls) ->
+    ok;
+possibly_print_call_waiters(_Waiters, Calls) ->
+    io:format(user,
+              "Test died while waiting for a call.~n"
+              "    Calls so far: ~p~n",
+              [[{M, F, A} || #call{m=M, f=F, a=A} <- Calls]]).
 
 %%--------------------------------------------------------------------
 %% @private
