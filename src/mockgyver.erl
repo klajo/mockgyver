@@ -283,7 +283,9 @@ setup_trace_on_all_mfas(MFAs) ->
 i_end_session(#state{mock_mfas=MockMFAs, session_mref=MRef} = State) ->
     unload_mods(get_unique_mods_by_mfas(MockMFAs)),
     erlang:trace(all, false, [call, {tracer, self()}]),
-    erlang:demonitor(MRef, [flush]),
+    if MRef =/= undefined -> erlang:demonitor(MRef, [flush]);
+       true               -> ok
+    end,
     State#state{actions=[], calls=[], session_mref=undefined, call_waiters=[],
                 mock_mfas=[], trace_mfas=[]}.
 
