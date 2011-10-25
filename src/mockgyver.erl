@@ -21,7 +21,7 @@
 
 -export([start_session/2]).
 
--export([get_action/1, set_action/1]).
+-export([reg_call_and_get_action/1, get_action/1, set_action/1]).
 -export([verify/2]).
 
 %% For test
@@ -36,7 +36,7 @@
 -define(beam_num_bytes_alignment, 4). %% according to spec below
 
 -record(state, {actions=[], calls, session_mref, session_waiters=queue:new(),
-                call_waiters=[], mock_mfas=[], trace_mfas=[]}).
+                call_waiters=[], mock_mfas=[], watch_mfas=[]}).
 -record(call, {m, f, a}).
 -record(action, {mfa, func}).
 -record(call_waiter, {from, mfa, crit}).
@@ -48,16 +48,19 @@
 %%% API
 %%%===================================================================
 
-exec(MockMFAs, TraceMFAs, Fun) ->
+exec(MockMFAs, WatchMFAs, Fun) ->
     ok = ensure_application_started(),
     try
-        case start_session(MockMFAs, TraceMFAs) of
+        case start_session(MockMFAs, WatchMFAs) of
             ok                 -> Fun();
             {error, _} = Error -> erlang:error(Error)
         end
     after
         end_session()
     end.
+
+reg_call_and_get_action(MFA) ->
+    call({reg_call_and_get_action, MFA}).
 
 get_action(MFA) ->
     call({get_action, MFA}).
@@ -78,8 +81,8 @@ ensure_application_started() ->
         {error, _} = Error            -> Error
     end.
 
-start_session(MockMFAs, TraceMFAs) ->
-    call({start_session, MockMFAs, TraceMFAs, self()}).
+start_session(MockMFAs, WatchMFAs) ->
+    call({start_session, MockMFAs, WatchMFAs, self()}).
 
 end_session() ->
     call(end_session).
@@ -122,18 +125,22 @@ init({}) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({start_session, MockMFAs, TraceMFAs, Pid}, From, State0) ->
+handle_call({start_session, MockMFAs, WatchMFAs, Pid}, From, State0) ->
     case is_within_session(State0) of
         false ->
-            {Reply, State} = i_start_session(MockMFAs, TraceMFAs, Pid, State0),
+            {Reply, State} = i_start_session(MockMFAs, WatchMFAs, Pid, State0),
             {reply, Reply, State};
         true ->
-            {noreply, enqueue_session({From, MockMFAs, TraceMFAs, Pid}, State0)}
+            {noreply, enqueue_session({From, MockMFAs, WatchMFAs, Pid}, State0)}
     end;
 handle_call(end_session, _From, State0) ->
     State1 = i_end_session(State0),
     State = possibly_dequeue_session(State1),
     {reply, ok, State};
+handle_call({reg_call_and_get_action, MFA}, _From, State0) ->
+    State = register_call(MFA, State0),
+    ActionFun = i_get_action(MFA, State),
+    {reply, ActionFun, State};
 handle_call({get_action, MFA}, _From, State) ->
     ActionFun = i_get_action(MFA, State),
     {reply, ActionFun, State};
@@ -167,8 +174,8 @@ enqueue_session(Session, #state{session_waiters=Waiters}=State) ->
 
 possibly_dequeue_session(#state{session_waiters=Waiters0}=State0) ->
     case queue:out(Waiters0) of
-        {{value, {From, MockMFAs, TraceMFAs, Pid}}, Waiters} ->
-            {Reply, State} = i_start_session(MockMFAs, TraceMFAs, Pid, State0),
+        {{value, {From, MockMFAs, WatchMFAs, Pid}}, Waiters} ->
+            {Reply, State} = i_start_session(MockMFAs, WatchMFAs, Pid, State0),
             gen_server:reply(From, Reply),
             State#state{session_waiters=Waiters};
         {empty, _} ->
@@ -210,8 +217,7 @@ handle_info(#'DOWN'{mref=MRef}, #state{session_mref=MRef,
     State = i_end_session(State0),
     {noreply, State};
 handle_info({trace, _, call, MFA}, State0) ->
-    State1 = i_reg_call(MFA, State0),
-    State  = i_possibly_notify_waiters(State1),
+    State = register_call(MFA, State0),
     {noreply, State};
 handle_info(Info, State) ->
     io:format(user, "~p got message: ~p~n", [?MODULE, Info]),
@@ -257,16 +263,21 @@ code_change(_OldVsn, State, _Extra) ->
 call(Msg) ->
     gen_server:call(?SERVER, Msg, infinity).
 
-i_start_session(MockMFAs, TraceMFAs, Pid, State0) ->
-    State = State0#state{mock_mfas=MockMFAs, trace_mfas=TraceMFAs},
-    case mock_and_load_mods(get_unique_mods_by_mfas(MockMFAs)) of
+i_start_session(MockMFAs, WatchMFAs, Pid, State0) ->
+    State = State0#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs},
+    MockMods = get_unique_mods_by_mfas(MockMFAs),
+    case mock_and_load_mods(MockMods) of
         ok ->
             erlang:trace(all, true, [call, {tracer, self()}]),
+            %% We mustn't trace non-mocked modules, since we'll register
+            %% calls for those as part of reg_call_and_get_action.  If we
+            %% did, we'd get double the amount of calls.
+            TraceMFAs = [{M,F,A} || {M,F,A} <- WatchMFAs,
+                                    not lists:member(M, MockMods)],
             case setup_trace_on_all_mfas(TraceMFAs) of
                 ok ->
                     MRef = erlang:monitor(process, Pid),
-                    {ok, State#state{calls=[],
-                                     session_mref=MRef}};
+                    {ok, State#state{calls=[], session_mref=MRef}};
                 {error, _}=Error ->
                     {Error, i_end_session(State)}
             end;
@@ -303,12 +314,16 @@ i_end_session(#state{mock_mfas=MockMFAs, session_mref=MRef} = State) ->
        true               -> ok
     end,
     State#state{actions=[], calls=[], session_mref=undefined, call_waiters=[],
-                mock_mfas=[], trace_mfas=[]}.
+                mock_mfas=[], watch_mfas=[]}.
 
-i_reg_call({M, F, A}, #state{calls=Calls} = State) ->
+register_call(MFA, State0) ->
+    State1 = store_call(MFA, State0),
+    possibly_notify_waiters(State1).
+
+store_call({M, F, A}, #state{calls=Calls} = State) ->
     State#state{calls=[#call{m=M, f=F, a=A} | Calls]}.
 
-i_possibly_notify_waiters(#state{call_waiters=Waiters0} = State) ->
+possibly_notify_waiters(#state{call_waiters=Waiters0} = State) ->
     Waiters =
         lists:filter(fun(#call_waiter{from=From, mfa=MFA, crit=Criteria}) ->
                              case get_and_check_matches(MFA, Criteria, State) of
@@ -377,8 +392,9 @@ check_criteria_value(never, 0)                     -> ok;
 check_criteria_value(Criteria, N) ->
     {error, {criteria_not_fulfilled, {expected, Criteria}, {actual, N}}}.
 
-i_get_action(MFA, #state{actions=Actions}) ->
-    case lists:keysearch(MFA, #action.mfa, Actions) of
+i_get_action({M,F,Args}, #state{actions=Actions}) ->
+    A = length(Args),
+    case lists:keysearch({M,F,A}, #action.mfa, Actions) of
         {value, #action{func=ActionFun}} -> ActionFun;
         false                            -> undefined
     end.
@@ -442,21 +458,21 @@ mk_mocked_funcs(Mod, OrigMod, ExportedFAs) ->
               ExportedFAs).
 
 mk_mocked_func(Mod, OrigMod, {F, A}) ->
-    %% Generate a function like this (some_mod, some_func and arguments vary):
+    %% Generate a function like this (mod, func and arguments vary):
     %%
-    %%     some_func(A2, A1) ->
-    %%         case mockgyver:get_action({some_mod,some_func,2}) of
+    %%     func(A2, A1) ->
+    %%         case mockgyver:reg_call_and_get_action({mod,func,[A2, A1]}) of
     %%             undefined ->
-    %%                 '^some_mod':some_func(A2, A1);
+    %%                 'mod^':func(A2, A1);
     %%             ActionFun ->
     %%                 ActionFun(A2, A1)
     %%         end.
     Args = mk_args(A),
     Body =[erl_syntax:case_expr(
-             mk_call(mockgyver, get_action,
+             mk_call(mockgyver, reg_call_and_get_action,
                      [erl_syntax:tuple([erl_syntax:abstract(Mod),
                                         erl_syntax:abstract(F),
-                                        erl_syntax:abstract(A)])]),
+                                        erl_syntax:list(Args)])]),
              [erl_syntax:clause([erl_syntax:atom(undefined)],
                                 none,
                                 [mk_call(OrigMod, F, Args)]),
