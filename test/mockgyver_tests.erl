@@ -35,6 +35,7 @@ mock_test_() ->
           fun returns_error_on_invalid_criteria/0,
           fun checks_that_two_different_functions_are_called/0,
           fun knows_the_difference_in_arities/0,
+          fun can_verify_both_mocked_and_non_mocked_modules/0,
           fun returns_immediately_if_waiters_criteria_already_fulfilled/0,
           fun waits_until_waiters_criteria_fulfilled/0,
           fun returns_other_value/0,
@@ -164,6 +165,13 @@ knows_the_difference_in_arities() ->
     mockgyver_dummy:return_arg(1),
     ?WAS_CALLED(mockgyver_dummy:return_arg(_), once),
     ?WAS_CALLED(mockgyver_dummy:return_arg(_, _), never).
+
+can_verify_both_mocked_and_non_mocked_modules() ->
+    ?WHEN(mockgyver_dummy:return_arg(_) -> [3, 2, 1]),
+    [3, 2, 1] = lists:reverse([1, 2, 3]),
+    [3, 2, 1] = mockgyver_dummy:return_arg(1),
+    ?WAS_CALLED(lists:reverse(_)),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_)).
 
 handles_all_criterias() ->
     %% never
