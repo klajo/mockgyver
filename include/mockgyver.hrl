@@ -23,4 +23,7 @@
 -define(WAIT_CALLED(Expr, Criteria),
         ?VERIFY(Expr, {wait_called, Criteria})).
 
+-define(NUM_CALLS(Expr),
+        ?VERIFY(Expr, num_calls)).
+
 -endif.

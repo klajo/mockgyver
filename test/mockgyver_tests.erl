@@ -44,7 +44,8 @@ mock_test_() ->
           fun can_use_params/0,
           fun can_use_multi_clause_functions/0,
           fun fails_gracefully_when_mocking_a_bif/0,
-          fun can_call_original_module/0],
+          fun can_call_original_module/0,
+          fun counts_calls/0],
     [{spawn, fun() -> ?MOCK(T) end} || T <- Ts].
 
 only_allows_one_mock_at_a_time_test() ->
@@ -247,3 +248,12 @@ fails_gracefully_when_mocking_a_bif() ->
 can_call_original_module() ->
     ?WHEN(mockgyver_dummy:return_arg(N) -> 2*'mockgyver_dummy^':return_arg(N)),
     6 = mockgyver_dummy:return_arg(3).
+
+counts_calls() ->
+    mockgyver_dummy:return_arg(1),
+    mockgyver_dummy:return_arg(2),
+    mockgyver_dummy:return_arg(2),
+    0 = ?NUM_CALLS(mockgyver_dummy:return_arg(_, _)),
+    1 = ?NUM_CALLS(mockgyver_dummy:return_arg(1)),
+    2 = ?NUM_CALLS(mockgyver_dummy:return_arg(2)),
+    3 = ?NUM_CALLS(mockgyver_dummy:return_arg(_)).

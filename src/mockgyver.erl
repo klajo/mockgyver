@@ -161,11 +161,11 @@ handle_call({verify, MFA, {wait_called, Criteria}}, From, State) ->
         {error, _} = Error ->
             {reply, Error, State}
     end;
+handle_call({verify, MFA, num_calls}, _From, State) ->
+    Matches = get_matches(MFA, State),
+    {reply, {ok, length(Matches)}, State};
 handle_call(stop, _From, State) ->
-    {stop, normal, ok, State};
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+    {stop, normal, ok, State}.
 
 is_within_session(#state{session_mref=MRef}) -> MRef =/= undefined.
 
