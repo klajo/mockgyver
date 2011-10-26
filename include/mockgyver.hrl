@@ -26,4 +26,7 @@
 -define(NUM_CALLS(Expr),
         ?VERIFY(Expr, num_calls)).
 
+-define(GET_CALLS(Expr),
+        ?VERIFY(Expr, get_calls)).
+
 -endif.

@@ -164,6 +164,9 @@ handle_call({verify, MFA, {wait_called, Criteria}}, From, State) ->
 handle_call({verify, MFA, num_calls}, _From, State) ->
     Matches = get_matches(MFA, State),
     {reply, {ok, length(Matches)}, State};
+handle_call({verify, MFA, get_calls}, _From, State) ->
+    Matches = get_matches(MFA, State),
+    {reply, {ok, Matches}, State};
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State}.
 
