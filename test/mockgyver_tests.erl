@@ -45,6 +45,8 @@ mock_test_() ->
           fun can_use_multi_clause_functions/0,
           fun fails_gracefully_when_mocking_a_bif/0,
           fun can_call_original_module/0,
+          fun can_make_new_module/0,
+          fun can_make_new_function_in_existing_module/0,
           fun counts_calls/0,
           fun returns_calls/0],
     [{spawn, fun() -> ?MOCK(T) end} || T <- Ts].
@@ -249,6 +251,17 @@ fails_gracefully_when_mocking_a_bif() ->
 can_call_original_module() ->
     ?WHEN(mockgyver_dummy:return_arg(N) -> 2*'mockgyver_dummy^':return_arg(N)),
     6 = mockgyver_dummy:return_arg(3).
+
+can_make_new_module() ->
+    ?WHEN(mockgyver_extra_dummy:return_arg(N) -> N),
+    ?WHEN(mockgyver_extra_dummy:return_arg(M, N) -> {M, N}),
+    1 = mockgyver_extra_dummy:return_arg(1),
+    {1, 2} = mockgyver_extra_dummy:return_arg(1, 2).
+
+can_make_new_function_in_existing_module() ->
+    ?WHEN(mockgyver_dummy:inc_arg_by_two(N) -> 2*N),
+    1 = mockgyver_dummy:return_arg(1),
+    2 = mockgyver_dummy:inc_arg_by_two(1).
 
 counts_calls() ->
     mockgyver_dummy:return_arg(1),

@@ -269,23 +269,19 @@ call(Msg) ->
 i_start_session(MockMFAs, WatchMFAs, Pid, State0) ->
     State = State0#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs},
     MockMods = get_unique_mods_by_mfas(MockMFAs),
-    case mock_and_load_mods(MockMods) of
+    mock_and_load_mods(MockMFAs),
+    erlang:trace(all, true, [call, {tracer, self()}]),
+    %% We mustn't trace non-mocked modules, since we'll register
+    %% calls for those as part of reg_call_and_get_action.  If we
+    %% did, we'd get double the amount of calls.
+    TraceMFAs = [{M,F,A} || {M,F,A} <- WatchMFAs,
+                            not lists:member(M, MockMods)],
+    case setup_trace_on_all_mfas(TraceMFAs) of
         ok ->
-            erlang:trace(all, true, [call, {tracer, self()}]),
-            %% We mustn't trace non-mocked modules, since we'll register
-            %% calls for those as part of reg_call_and_get_action.  If we
-            %% did, we'd get double the amount of calls.
-            TraceMFAs = [{M,F,A} || {M,F,A} <- WatchMFAs,
-                                    not lists:member(M, MockMods)],
-            case setup_trace_on_all_mfas(TraceMFAs) of
-                ok ->
-                    MRef = erlang:monitor(process, Pid),
-                    {ok, State#state{calls=[], session_mref=MRef}};
-                {error, _}=Error ->
-                    {Error, i_end_session(State)}
-            end;
-        {error, _} = Error ->
-            {Error, State0}
+            MRef = erlang:monitor(process, Pid),
+            {ok, State#state{calls=[], session_mref=MRef}};
+        {error, _}=Error ->
+            {Error, i_end_session(State)}
     end.
 
 setup_trace_on_all_mfas(MFAs) ->
@@ -422,21 +418,19 @@ chk(ok)              -> ok;
 chk({ok, Value})     -> Value;
 chk({error, Reason}) -> erlang:error(Reason).
 
-mock_and_load_mods(Mods) ->
-    lists:foldl(fun(Mod, ok)     -> mock_and_load_mod(Mod);
-                   (_Mod, Error) -> Error
-                end,
-                ok,
-                Mods).
+mock_and_load_mods(MFAs) ->
+    ModsFAs = group_fas_by_mod(MFAs),
+    lists:foreach(fun(ModFAs) -> mock_and_load_mod(ModFAs) end,
+                  ModsFAs).
 
-mock_and_load_mod(Mod) ->
-    case get_exported_non_bif_fas(Mod) of
+mock_and_load_mod({Mod, UserAddedFAs}) ->
+    case get_exported_fas(Mod) of
         {ok, ExportedFAs} ->
             OrigMod = reload_mod_under_different_name(Mod),
-            mk_mocking_mod(Mod, OrigMod, ExportedFAs),
-            ok;
+            FAs = get_non_bif_fas(Mod, lists:usort(ExportedFAs++UserAddedFAs)),
+            mk_mocking_mod(Mod, OrigMod, FAs);
         {error, {no_such_module, Mod}} ->
-            {error, {cant_mock_non_existing_module, Mod}}
+            mk_new_mod(Mod, UserAddedFAs)
     end.
 
 reload_mod_under_different_name(Mod) ->
@@ -449,12 +443,7 @@ reload_mod_under_different_name(Mod) ->
     OrigMod.
 
 mk_mocking_mod(Mod, OrigMod, ExportedFAs) ->
-    Forms0 = ([erl_syntax:attribute(erl_syntax:abstract(module),
-                                    [erl_syntax:abstract(Mod)])]
-              ++ mk_mocked_funcs(Mod, OrigMod, ExportedFAs)),
-    Forms = [erl_syntax:revert(Form) || Form <- Forms0],
-    {ok, Mod, Bin} = compile:forms(Forms, [report, export_all]),
-    {module, Mod} = code:load_binary(Mod, "mock", Bin).
+    mk_mod(Mod, mk_mocked_funcs(Mod, OrigMod, ExportedFAs)).
 
 mk_mocked_funcs(Mod, OrigMod, ExportedFAs) ->
     lists:map(fun(ExportedFA) -> mk_mocked_func(Mod, OrigMod, ExportedFA) end,
@@ -486,6 +475,48 @@ mk_mocked_func(Mod, OrigMod, {F, A}) ->
       erl_syntax:abstract(F),
       [erl_syntax:clause(Args, none, Body)]).
 
+mk_new_mod(Mod, ExportedFAs) ->
+    mk_mod(Mod, mk_new_funcs(Mod, ExportedFAs)).
+
+mk_new_funcs(Mod, ExportedFAs) ->
+    lists:map(fun(ExportedFA) -> mk_new_func(Mod, ExportedFA) end,
+              ExportedFAs).
+
+mk_new_func(Mod, {F, A}) ->
+    %% Generate a function like this (mod, func and arguments vary):
+    %%
+    %%     func(A2, A1) ->
+    %%         case mockgyver:reg_call_and_get_action({mod,func,[A2, A1]}) of
+    %%             undefined ->
+    %%                 erlang:error(undef); % emulate undefined function
+    %%             ActionFun ->
+    %%                 ActionFun(A2, A1)
+    %%         end.
+    Args = mk_args(A),
+    Body =[erl_syntax:case_expr(
+             mk_call(mockgyver, reg_call_and_get_action,
+                     [erl_syntax:tuple([erl_syntax:abstract(Mod),
+                                        erl_syntax:abstract(F),
+                                        erl_syntax:list(Args)])]),
+             [erl_syntax:clause([erl_syntax:atom(undefined)],
+                                none,
+                                [mk_call(erlang, error,
+                                         [erl_syntax:atom(undef)])]),
+              erl_syntax:clause([erl_syntax:variable('ActionFun')],
+                                none,
+                                [mk_call('ActionFun', Args)])])],
+    erl_syntax:function(
+      erl_syntax:abstract(F),
+      [erl_syntax:clause(Args, none, Body)]).
+
+mk_mod(Mod, FuncForms) ->
+    Forms0 = ([erl_syntax:attribute(erl_syntax:abstract(module),
+                                    [erl_syntax:abstract(Mod)])]
+              ++ FuncForms),
+    Forms = [erl_syntax:revert(Form) || Form <- Forms0],
+    {ok, Mod, Bin} = compile:forms(Forms, [report, export_all]),
+    {module, Mod} = code:load_binary(Mod, "mock", Bin).
+
 mk_call(FunVar, As) ->
     erl_syntax:application(erl_syntax:variable(FunVar), As).
 
@@ -515,16 +546,26 @@ unload_mod(Mod) ->
 get_unique_mods_by_mfas(MFAs) ->
     lists:usort([M || {M,_F,_A} <- MFAs]).
 
-get_exported_non_bif_fas(Mod) ->
+group_fas_by_mod(MFAs) ->
+    ModFAs = lists:foldl(fun({M, F, A}, AccModFAs) ->
+                                 dict:append(M, {F, A}, AccModFAs)
+                         end,
+                         dict:new(),
+                         MFAs),
+    dict:to_list(ModFAs).
+
+get_exported_fas(Mod) ->
     try
         {ok, [{F, A} || {F, A} <- Mod:module_info(exports),
                         {F, A} =/= {module_info, 0},
-                        {F, A} =/= {module_info, 1},
-                        not erlang:is_builtin(Mod, F, A)]}
+                        {F, A} =/= {module_info, 1}]}
     catch
         error:undef ->
             {error, {no_such_module, Mod}}
     end.
+
+get_non_bif_fas(Mod, FAs) ->
+    [{F, A} || {F, A} <- FAs, not erlang:is_builtin(Mod, F, A)].
 
 %%-------------------------------------------------------------------
 %% Rename a module which is already compiled.
