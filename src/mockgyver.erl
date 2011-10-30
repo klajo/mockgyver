@@ -92,15 +92,15 @@
 %%%       certain set of parameters a chosen number of times.
 %%%       The validation is done at the place of the macro, consider
 %%%       this when verifying asynchronous procedures
-%%%       (see also ?WAIT_CALLED).  Return a list of argument lists,
+%%%       (see also `?WAIT_CALLED').  Return a list of argument lists,
 %%%       one argument list for each call to the function.  An
 %%%       argument list contains the arguments of a specific call.
 %%%       Will crash with an error if the criteria isn't fulfilled.</li>
-%%%   <li>`?WAIT_CALLED': Same as ?WAS_CALLED, with a twist: waits for
+%%%   <li>`?WAIT_CALLED': Same as `?WAS_CALLED', with a twist: waits for
 %%%       the criteria to be fulfilled which can be useful for
 %%%       asynchrounous procedures.</li>
 %%%   <li>`?GET_CALLS': Return a list of argument lists (just like
-%%%        ?WAS_CALLED or ?WAIT_CALLED) without checking any criteria.</li>
+%%%        `?WAS_CALLED' or `?WAIT_CALLED') without checking any criteria.</li>
 %%%   <li>`?NUM_CALLS': Return the number of calls to a function.</li>
 %%% </ul>
 %%%
@@ -119,7 +119,7 @@
 %%% '''
 %%% ==== ?WAIT_CALLED syntax ====
 %%%
-%%% See ?WAS_CALLED.
+%%% See syntax for `?WAS_CALLED'.
 %%%
 %%% ==== ?GET_CALLS syntax ====
 %%% ```
