@@ -7,7 +7,7 @@
 %%% === Mocking a function ===
 %%%
 %%% ==== Introduction ====
-%%% By mocking a function, it's original side-effects and return value
+%%% By mocking a function, its original side-effects and return value
 %%% (or throw/exit/error) are overridden and replaced.  This can be used to:
 %%%
 %%% <ul>
@@ -19,8 +19,8 @@
 %%% BIFs (built-in functions) cannot be mocked.
 %%%
 %%% The original module will be renamed (a "^" will be appended to the
-%%% original module name, i.e. foo will be renamed to 'foo^').  A mock
-%%% can call the original function just by performing a regular
+%%% original module name, i.e. ``foo'' will be renamed to `` 'foo^' '').
+%%% A mock can then call the original function just by performing a regular
 %%% function call.
 %%%
 %%% Since WHEN is a macro, and macros don't support argument lists
@@ -28,7 +28,7 @@
 %%% surrounded by `begin ... end' to be treated as one argument by the
 %%% preprocessor.
 %%%
-%%% ==== Syntax ====
+%%% ==== ?WHEN syntax ====
 %%% ```
 %%%     ?WHEN(module:function(Arg1, Arg2, ...) -> Expr),
 %%% '''
@@ -79,6 +79,118 @@
 %%%                   do_something2()
 %%%               end),
 %%% '''
+%%%
+%%% === Validating calls ===
+%%%
+%%% ==== Introduction ====
+%%%
+%%% There are a number of ways to check that a certain function has
+%%% been called and that works for both mocks and non-mocks.
+%%%
+%%% <ul>
+%%%   <li>`?WAS_CALLED': Check that a function was called with
+%%%       certain set of parameters a chosen number of times.
+%%%       The validation is done at the place of the macro, consider
+%%%       this when verifying asynchronous procedures
+%%%       (see also ?WAIT_CALLED).  Return a list of argument lists,
+%%%       one argument list for each call to the function.  An
+%%%       argument list contains the arguments of a specific call.
+%%%       Will crash with an error if the criteria isn't fulfilled.</li>
+%%%   <li>`?WAIT_CALLED': Same as ?WAS_CALLED, with a twist: waits for
+%%%       the criteria to be fulfilled which can be useful for
+%%%       asynchrounous procedures.</li>
+%%%   <li>`?GET_CALLS': Return a list of argument lists (just like
+%%%        ?WAS_CALLED or ?WAIT_CALLED) without checking any criteria.</li>
+%%%   <li>`?NUM_CALLS': Return the number of calls to a function.</li>
+%%% </ul>
+%%%
+%%% ==== ?WAS_CALLED syntax ====
+%%% ```
+%%%     ?WAS_CALLED(module:function(Arg1, Arg2, ...)),
+%%%         equivalent to ?WAS_CALLED(module:function(Arg1, Arg2, ...), once)
+%%%     ?WAS_CALLED(module:function(Arg1, Arg2, ...), Criteria),
+%%%         Criteria = once | never | {times, N} | {at_least, N} | {at_most, N}
+%%%         N = integer()
+%%%
+%%%         Result: [CallArgs]
+%%%                 CallArgs = [CallArg]
+%%%                 CallArg = term()
+%%%
+%%% '''
+%%% ==== ?WAIT_CALLED syntax ====
+%%%
+%%% See ?WAS_CALLED.
+%%%
+%%% ==== ?GET_CALLS syntax ====
+%%% ```
+%%%     ?GET_CALLS(module:function(Arg1, Arg2, ...)),
+%%%
+%%%         Result: [CallArgs]
+%%%                 CallArgs = [CallArg]
+%%%                 CallArg = term()
+%%% '''
+%%%
+%%% ==== ?NUM_CALLS syntax ====
+%%% ```
+%%%     ?NUM_CALLS(module:function(Arg1, Arg2, ...)),
+%%%
+%%%         Result: integer()
+%%% '''
+%%% ==== Examples ====
+%%% Check that a function has been called once (the two alternatives
+%%% are equivalent):
+%%% ```
+%%%     ?WAS_CALLED(math:pi()),
+%%%     ?WAS_CALLED(math:pi(), once),
+%%% '''
+%%% Check that a function has never been called:
+%%% ```
+%%%     ?WAS_CALLED(math:pi(), never),
+%%% '''
+%%% Check that a function has been called twice:
+%%% ```
+%%%     ?WAS_CALLED(math:pi(), {times, 2}),
+%%% '''
+%%% Check that a function has been called at least twice:
+%%% ```
+%%%     ?WAS_CALLED(math:pi(), {at_least, 2}),
+%%% '''
+%%% Check that a function has been called at most twice:
+%%% ```
+%%%     ?WAS_CALLED(math:pi(), {at_most, 2}),
+%%% '''
+%%% Use pattern matching to check that a function was called with
+%%% certain arguments:
+%%% ```
+%%%     ?WAS_CALLED(lists:reverse([a, b, c])),
+%%% '''
+%%% Pattern matching can even use bound variables:
+%%% ```
+%%%     L = [a, b, c],
+%%%     ?WAS_CALLED(lists:reverse(L)),
+%%% '''
+%%% Use a guard to validate the parameters in a call:
+%%% ```
+%%%     ?WAS_CALLED(lists:reverse(L) when is_list(L)),
+%%% '''
+%%% Retrieve the arguments in a call while verifying the number of calls:
+%%% ```
+%%%     a = lists:nth(1, [a, b]),
+%%%     d = lists:nth(2, [c, d]),
+%%%     [[1, [a, b]], [2, [c, d]]] = ?WAS_CALLED(lists:nth(_, _), {times, 2}),
+%%% '''
+%%% Retrieve the arguments in a call without verifying the number of calls:
+%%% ```
+%%%     a = lists:nth(1, [a, b]),
+%%%     d = lists:nth(2, [c, d]),
+%%%     [[1, [a, b]], [2, [c, d]]] = ?GET_CALLS(lists:nth(_, _)),
+%%% '''
+%%% Retrieve the number of calls:
+%%% ```
+%%%     a = lists:nth(1, [a, b]),
+%%%     d = lists:nth(2, [c, d]),
+%%%     2 = ?NUM_CALLS(lists:nth(_, _)),
+%%% '''
 %%% @end
 %%%-------------------------------------------------------------------
 -module(mockgyver).
@@ -94,8 +206,6 @@
 
 -export([start_link/0]).
 -export([stop/0]).
-
--export([start_session/2]).
 
 -export([reg_call_and_get_action/1, get_action/1, set_action/1]).
 -export([verify/2]).
@@ -124,6 +234,7 @@
 %%% API
 %%%===================================================================
 
+%% @private
 exec(MockMFAs, WatchMFAs, Fun) ->
     ok = ensure_application_started(),
     try
@@ -135,18 +246,23 @@ exec(MockMFAs, WatchMFAs, Fun) ->
         end_session()
     end.
 
+%% @private
 reg_call_and_get_action(MFA) ->
     call({reg_call_and_get_action, MFA}).
 
+%% @private
 get_action(MFA) ->
     call({get_action, MFA}).
 
+%% @private
 set_action(MFA) ->
     chk(call({set_action, MFA})).
 
+%% @private
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
+%% @private
 stop() ->
     call(stop).
 
@@ -163,6 +279,7 @@ start_session(MockMFAs, WatchMFAs) ->
 end_session() ->
     call(end_session).
 
+%% @private
 %% once | {at_least, N} | {at_most, N} | {times, N} | never
 verify({M, F, A}, Criteria) ->
     wait_until_trace_delivered(),
@@ -445,6 +562,7 @@ is_match({CallM,CallF,CallA}, {ExpectM,ExpectF,ExpectA}) when CallM==ExpectM,
 is_match(_CallMFA, _ExpectMFA) ->
     false.
 
+%% @private
 check_criteria(Criteria, N) ->
     case check_criteria_syntax(Criteria) of
         ok               -> check_criteria_value(Criteria, N);
