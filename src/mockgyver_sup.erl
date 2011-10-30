@@ -1,8 +1,8 @@
 %%%-------------------------------------------------------------------
 %%% @author Klas Johansson klas.johansson@gmail.com
 %%% @copyright (C) 2011, Klas Johansson
-%%% @doc
-%%%
+%%% @private
+%%% @doc Supervise the app.
 %%% @end
 %%%-------------------------------------------------------------------
 -module(mockgyver_sup).

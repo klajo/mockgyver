@@ -2,7 +2,83 @@
 %%% @author Klas Johansson klas.johansson@gmail.com
 %%% @copyright (C) 2011, Klas Johansson
 %%% @doc
+%%% Mock functions and modules
 %%%
+%%% === Mocking a function ===
+%%%
+%%% ==== Introduction ====
+%%% By mocking a function, it's original side-effects and return value
+%%% (or throw/exit/error) are overridden and replaced.  This can be used to:
+%%%
+%%% <ul>
+%%%   <li>replace existing functions in existing modules</li>
+%%%   <li>add new functions to existing modules</li>
+%%%   <li>add new modules</li>
+%%% </ul>
+%%%
+%%% BIFs (built-in functions) cannot be mocked.
+%%%
+%%% The original module will be renamed (a "^" will be appended to the
+%%% original module name, i.e. foo will be renamed to 'foo^').  A mock
+%%% can call the original function just by performing a regular
+%%% function call.
+%%%
+%%% Since WHEN is a macro, and macros don't support argument lists
+%%% (something like "Arg..."), multi-expression mocks must be
+%%% surrounded by `begin ... end' to be treated as one argument by the
+%%% preprocessor.
+%%%
+%%% ==== Syntax ====
+%%% ```
+%%%     ?WHEN(module:function(Arg1, Arg2, ...) -> Expr),
+%%% '''
+%%%
+%%% where `Expr' is a single expression (like a term) or a series of
+%%% expressions surrounded by `begin' and `end'.
+%%%
+%%% ==== Examples ====
+%%% Redefine pi to 4:
+%%% ```
+%%%     ?WHEN(math:pi() -> 4),
+%%% '''
+%%% Implement a mock with multiple clauses:
+%%% ```
+%%%     ?WHEN(my_module:classify_number(N) when N >= 0 -> positive;
+%%%           my_module:classify_number(_N)            -> negative),
+%%% '''
+%%% Call original module:
+%%% ```
+%%%     ?WHEN(math:pi() -> 'math^':pi() * 2),
+%%% '''
+%%% Use a variable bound outside the mock:
+%%% ```
+%%%     Answer = 42,
+%%%     ?WHEN(math:pi() -> Answer),
+%%% '''
+%%% Redefine the mock:
+%%% ```
+%%%     ?WHEN(math:pi() -> 4),
+%%%     4 = math:pi(),
+%%%     ?WHEN(math:pi() -> 5),
+%%%     5 = math:pi(),
+%%% '''
+%%% Let the mock exit with an error:
+%%% ```
+%%%     ?WHEN(math:pi() -> erlang:error(some_error)),
+%%% '''
+%%% Make a new module:
+%%% ```
+%%%     ?WHEN(my_math:pi() -> 4),
+%%%     ?WHEN(my_math:e() -> 3),
+%%% '''
+%%% Put multiple clauses in a function's body:
+%%% ```
+%%%     ?WHEN(math:pi() ->
+%%%               begin
+%%%                   do_something1(),
+%%%                   do_something2()
+%%%               end),
+%%% '''
 %%% @end
 %%%-------------------------------------------------------------------
 -module(mockgyver).

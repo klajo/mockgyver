@@ -1,8 +1,8 @@
 %%%-------------------------------------------------------------------
 %%% @author Klas Johansson klas.johansson@gmail.com
 %%% @copyright (C) 2010, Klas Johansson
-%%% @doc
-%%%
+%%% @private
+%%% @doc Transform mock syntax into real function calls.
 %%% @end
 %%%-------------------------------------------------------------------
 -module(mockgyver_xform).
