@@ -183,17 +183,17 @@ handles_all_criterias() ->
     ok         = mockgyver:check_criteria(never, 0),
     {error, _} = mockgyver:check_criteria(never, 1),
     %% once
-    {error, _} = mockgyver:check_criteria(once, -1),
-    ok         = mockgyver:check_criteria(once, 0),
-    {error, _} = mockgyver:check_criteria(once, 1),
+    {error, _} = mockgyver:check_criteria(once, 0),
+    ok         = mockgyver:check_criteria(once, 1),
+    {error, _} = mockgyver:check_criteria(once, 2),
     %% at_least
     {error, _} = mockgyver:check_criteria({at_least, 0}, -1),
     ok         = mockgyver:check_criteria({at_least, 0}, 0),
     ok         = mockgyver:check_criteria({at_least, 0}, 1),
     %% at_most
-    ok         = mockgyver:check_criteria({at_least, 0}, -1),
-    ok         = mockgyver:check_criteria({at_least, 0}, 0),
-    {error, _} = mockgyver:check_criteria({at_least, 0}, 1),
+    ok         = mockgyver:check_criteria({at_most, 0}, -1),
+    ok         = mockgyver:check_criteria({at_most, 0}, 0),
+    {error, _} = mockgyver:check_criteria({at_most, 0}, 1),
     %% times
     {error, _} = mockgyver:check_criteria({times, 0}, -1),
     ok         = mockgyver:check_criteria({times, 0}, 0),
