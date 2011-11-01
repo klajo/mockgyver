@@ -20,6 +20,41 @@ __Authors:__ Klas Johansson.<a name="description"></a>
 
 
 
+####<a name="Initiating_mock">Initiating mock</a>##
+
+
+
+
+In order to use the various macros below, mocking must be
+initiated using the `?MOCK` macro or `?WITH_MOCKED_SETUP`   
+(recommended from eunit tests).
+
+
+<h5><a name="?MOCK_syntax">?MOCK syntax</a></h5>
+
+<pre>       ?MOCK(Expr)</pre>
+
+
+where `Expr` in a single expression, like a fun.  The rest of the   
+macros in this module can be used within this fun or in a function   
+called by the fun.
+
+
+<h5><a name="?WITH_MOCKED_SETUP_syntax">?WITH_MOCKED_SETUP syntax</a></h5>
+
+<pre>       ?WITH_MOCKED_SETUP(SetupFun, CleanupFun),
+       ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout),
+       ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
+                          Tests),</pre>
+
+
+This is an easy way of using mocks from within eunit tests and is
+mock-specific version of the `?WITH_SETUP` macro.  See the docs
+for the `?WITH_SETUP` macro in the `eunit_addons` project for more   
+information on parameters and settings.
+
+
+
 ####<a name="Mocking_a_function">Mocking a function</a>##
 
 

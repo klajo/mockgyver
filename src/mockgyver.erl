@@ -37,6 +37,32 @@
 %%% @doc
 %%% Mock functions and modules
 %%%
+%%% === Initiating mock ===
+%%%
+%%% In order to use the various macros below, mocking must be
+%%% initiated using the `?MOCK' macro or `?WITH_MOCKED_SETUP'
+%%% (recommended from eunit tests).
+%%%
+%%% ==== ?MOCK syntax ====
+%%% ```
+%%%     ?MOCK(Expr)
+%%% '''
+%%% where `Expr' in a single expression, like a fun.  The rest of the
+%%% macros in this module can be used within this fun or in a function
+%%% called by the fun.
+%%%
+%%% ==== ?WITH_MOCKED_SETUP syntax ====
+%%% ```
+%%%     ?WITH_MOCKED_SETUP(SetupFun, CleanupFun),
+%%%     ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout),
+%%%     ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
+%%%                        Tests),
+%%% '''
+%%% This is an easy way of using mocks from within eunit tests and is
+%%% mock-specific version of the `?WITH_SETUP' macro.  See the docs
+%%% for the `?WITH_SETUP' macro in the `eunit_addons' project for more
+%%% information on parameters and settings.
+%%%
 %%% === Mocking a function ===
 %%%
 %%% ==== Introduction ====
