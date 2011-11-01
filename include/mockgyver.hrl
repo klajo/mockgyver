@@ -56,4 +56,10 @@
 -define(GET_CALLS(Expr),
         ?VERIFY(Expr, get_calls)).
 
+-define(FORGET_WHEN(Expr),
+        ?VERIFY(Expr, forget_when)).
+
+-define(FORGET_CALLS(Expr),
+        ?VERIFY(Expr, forget_calls)).
+
 -endif.

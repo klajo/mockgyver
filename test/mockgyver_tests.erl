@@ -250,3 +250,34 @@ returns_calls_test(_) ->
         ?GET_CALLS(mockgyver_dummy:return_arg(2)),
     [[1], [2], [2]] =
         ?GET_CALLS(mockgyver_dummy:return_arg(_)).
+
+forgets_when_to_default_test(_) ->
+    1      = mockgyver_dummy:return_arg(1),
+    {1, 2} = mockgyver_dummy:return_arg(1, 2),
+    ?WHEN(mockgyver_dummy:return_arg(_) -> foo),
+    ?WHEN(mockgyver_dummy:return_arg(_, _) -> foo),
+    foo = mockgyver_dummy:return_arg(1),
+    foo = mockgyver_dummy:return_arg(1, 2),
+    ?FORGET_WHEN(mockgyver_dummy:return_arg(_)),
+    1   = mockgyver_dummy:return_arg(1),
+    foo = mockgyver_dummy:return_arg(1, 2).
+
+forgets_registered_calls_test(_) ->
+    1      = mockgyver_dummy:return_arg(1),
+    2      = mockgyver_dummy:return_arg(2),
+    3      = mockgyver_dummy:return_arg(3),
+    {1, 2} = mockgyver_dummy:return_arg(1, 2),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_), {times, 3}),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_, _), once),
+    ?FORGET_CALLS(mockgyver_dummy:return_arg(1)),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_), {times, 2}),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(1), never),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(2), once),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(2), once),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_, _), once),
+    ?FORGET_CALLS(mockgyver_dummy:return_arg(_)),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_), never),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_, _), once),
+    ?FORGET_CALLS(mockgyver_dummy:return_arg(_, _)),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_), never),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_, _), never).

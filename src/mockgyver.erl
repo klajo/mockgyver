@@ -1,6 +1,6 @@
 %%%-------------------------------------------------------------------
-%%% @author Klas Johansson klas.johansson@gmail.com
-%%% @copyright (C) 2011, Klas Johansson
+%%% @author Klas Johansson
+%%% @copyright 2011, Klas Johansson
 %%% @doc
 %%% Mock functions and modules
 %%%
@@ -28,6 +28,10 @@
 %%% surrounded by `begin ... end' to be treated as one argument by the
 %%% preprocessor.
 %%%
+%%% A mock that was introduced using the ?WHEN macro can be forgotten,
+%%% i.e. returned to the behaviour of the original module, using the
+%%% `?FORGET_WHEN' macro.
+%%%
 %%% ==== ?WHEN syntax ====
 %%% ```
 %%%     ?WHEN(module:function(Arg1, Arg2, ...) -> Expr),
@@ -35,6 +39,16 @@
 %%%
 %%% where `Expr' is a single expression (like a term) or a series of
 %%% expressions surrounded by `begin' and `end'.
+%%%
+%%% ==== ?FORGET_WHEN syntax ====
+%%% ```
+%%%     ?FORGET_WHEN(module:function(_, _, ...)),
+%%% '''
+%%%
+%%% The only things of interest are the name of the module, the name
+%%% of the function and the arity.  The arguments of the function are
+%%% ignored and it can be a wise idea to set these to the "don't care"
+%%% variable: underscore.
 %%%
 %%% ==== Examples ====
 %%% Redefine pi to 4:
@@ -79,6 +93,15 @@
 %%%                   do_something2()
 %%%               end),
 %%% '''
+%%% Revert the pi function to its default behaviour (return value from
+%%% the original module), any other mocks in the same module, or any
+%%% other module are left untouched:
+%%% ```
+%%%     ?WHEN(math:pi() -> 4),
+%%%     4 = math:pi(),
+%%%     ?FORGET_WHEN(math:pi()),
+%%%     3.1415... = math:pi(),
+%%% '''
 %%%
 %%% === Validating calls ===
 %%%
@@ -100,8 +123,13 @@
 %%%       the criteria to be fulfilled which can be useful for
 %%%       asynchrounous procedures.</li>
 %%%   <li>`?GET_CALLS': Return a list of argument lists (just like
-%%%        `?WAS_CALLED' or `?WAIT_CALLED') without checking any criteria.</li>
+%%%       `?WAS_CALLED' or `?WAIT_CALLED') without checking any criteria.</li>
 %%%   <li>`?NUM_CALLS': Return the number of calls to a function.</li>
+%%%   <li>`?FORGET_CALLS': Forget the calls that have been logged for a
+%%%        certain function.  Takes arguments and guards into account,
+%%%        i.e. only the calls which match the module name, function
+%%%        name and all arguments as well as any guards will be
+%%%        forgotten, while the rest of the calls remain.</li>
 %%% </ul>
 %%%
 %%% ==== ?WAS_CALLED syntax ====
@@ -135,6 +163,10 @@
 %%%     ?NUM_CALLS(module:function(Arg1, Arg2, ...)),
 %%%
 %%%         Result: integer()
+%%% '''
+%%% ==== ?FORGET_CALLS syntax ====
+%%% ```
+%%%     ?FORGET_CALLS(module:function(Arg1, Arg2, ...)),
 %%% '''
 %%% ==== Examples ====
 %%% Check that a function has been called once (the two alternatives
@@ -190,6 +222,23 @@
 %%%     a = lists:nth(1, [a, b]),
 %%%     d = lists:nth(2, [c, d]),
 %%%     2 = ?NUM_CALLS(lists:nth(_, _)),
+%%% '''
+%%% Forget calls to functions:
+%%% ```
+%%%     a = lists:nth(1, [a, b, c]),
+%%%     e = lists:nth(2, [d, e, f]),
+%%%     i = lists:nth(3, [g, h, i]),
+%%%     ?WAS_CALLED(lists:nth(1, [a, b, c]), once),
+%%%     ?WAS_CALLED(lists:nth(2, [d, e, f]), once),
+%%%     ?WAS_CALLED(lists:nth(3, [g, h, i]), once),
+%%%     ?FORGET_CALLS(lists:nth(2, [d, e, f])),
+%%%     ?WAS_CALLED(lists:nth(1, [a, b, c]), once),
+%%%     ?WAS_CALLED(lists:nth(2, [d, e, f]), never),
+%%%     ?WAS_CALLED(lists:nth(3, [g, h, i]), once),
+%%%     ?FORGET_CALLS(lists:nth(_, _)),
+%%%     ?WAS_CALLED(lists:nth(1, [a, b, c]), never),
+%%%     ?WAS_CALLED(lists:nth(2, [d, e, f]), never),
+%%%     ?WAS_CALLED(lists:nth(3, [g, h, i]), never),
 %%% '''
 %%% @end
 %%%-------------------------------------------------------------------
@@ -360,6 +409,12 @@ handle_call({verify, MFA, num_calls}, _From, State) ->
 handle_call({verify, MFA, get_calls}, _From, State) ->
     Matches = get_matches(MFA, State),
     {reply, {ok, Matches}, State};
+handle_call({verify, MFA, forget_when}, _From, State0) ->
+    State = i_forget_action(MFA, State0),
+    {reply, ok, State};
+handle_call({verify, MFA, forget_calls}, _From, State0) ->
+    State = remove_matching_calls(MFA, State0),
+    {reply, ok, State};
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State}.
 
@@ -548,6 +603,13 @@ get_matches({_M, _F, _A}=ExpectMFA, #state{calls=Calls}) ->
                 [],
                 Calls).
 
+remove_matching_calls({_M, _F, _A} = ExpectMFA, #state{calls=Calls0}=State) ->
+    Calls = lists:filter(fun(#call{m=M0, f=F0, a=A0}) ->
+                                 not is_match({M0,F0,A0}, ExpectMFA)
+                         end,
+                         Calls0),
+    State#state{calls=Calls}.
+
 is_match({CallM,CallF,CallA}, {ExpectM,ExpectF,ExpectA}) when CallM==ExpectM,
                                                               CallF==ExpectF ->
     try
@@ -603,6 +665,12 @@ i_set_action({M, F, ActionFun}, #state{actions=Actions0} = State) ->
                                      #action{mfa=MFA, func=ActionFun}),
             {ok, State#state{actions=Actions}}
     end.
+
+i_forget_action({M, F, ActionFun}, #state{actions=Actions0} = State) ->
+    {arity, A} = erlang:fun_info(ActionFun, arity),
+    MFA = {M, F, A},
+    Actions = lists:keydelete(MFA, #action.mfa, Actions0),
+    State#state{actions=Actions}.
 
 wait_until_trace_delivered() ->
     Ref = erlang:trace_delivered(all),
