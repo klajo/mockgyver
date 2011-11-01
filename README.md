@@ -17,6 +17,11 @@ with a chosen set of arguments.
 Read more about constructs and syntax in the
 documentation for the mockgyver module.
 
+The documentation is generated using the [edown][3]
+extension which generates documentation which is
+immediately readable on github.  Remove the edown lines
+from `rebar.config` to generate regular edoc.
+
 A quick tutorial
 ----------------
 
@@ -70,22 +75,26 @@ called the stubber.  Using it looked something like this:
         end),
 
 Time went by and we had test cases which needed a more
-intricate behaviour and that's when I thought: it must
-be possible to come up with something better and that's
+intricate behaviour, the stubs grew more and more
+complicated and that's when I thought: it must be
+possible to come up with something better and that's
 when I wrote mockgyver.
 
 Building
 --------
 
-Build mockgyver using [rebar][1].  Also, [parse\_trans][2]
-is required, but rebar takes care of that.
+Build mockgyver using [rebar][1].  Also,
+[parse\_trans][2] (for the special syntax), [edown][3]
+(for docs) and [eunit\_addons][4] (for ?WITH\_MOCKED\_SETUP)
+are required, but rebar takes care of that.
 
 ```sh
 $ git clone git://github.com/klajo/mockgyver.git
 $ rebar get-deps
 $ rebar compile
-'''
-
+```
 
 [1]: https://github.com/basho/rebar
 [2]: https://github.com/esl/parse_trans
+[3]: https://github.com/esl/edown
+[4]: https://github.com/klajo/eunit_addons
