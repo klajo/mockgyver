@@ -47,17 +47,47 @@ these lines:
     ?WAS_CALLED(ssh:close(ssh_ref)),
 
 For all of this to work, the test needs to be
-encapsulated within the ?MOCK macro, but there are
-helpers that make that process easy.
+encapsulated within either the ?MOCK macro or the
+?WITH\_MOCKED\_SETUP (recommended for eunit).  Assume the
+test case above is within a function called
+sets\_up\_and\_tears\_down\_ssh\_connection:
+
+    sets_up_and_tears_down_ssh_connection_test() ->
+        ?MOCK(fun sets_up_and_tears_down_ssh_connection/0).
+
+Or, if you prefer ?WITH\_MOCKED\_SETUP:
+
+    ssh_test_() ->
+        ?WITH_MOCKED_SETUP(fun setup/0, fun cleanup/1).
+
+    sets_up_and_tears_down_ssh_connection_test(_) ->
+        ...
+
+Sometimes a test requires a process to be started
+before a test, and stopped after a test.  In that case,
+the latter is better (it'll automatically export and
+call all ...test/1 functions).
 
 The final test case could look something like this:
 
-    ?WHEN(ssh:connect(_Host, _Port, _Opts) -> {ok, ssh_ref}),
-    ?WHEN(ssh:close(_ConnRef) -> ok),
-    ...start the program and trigger the ssh connection to open...
-    ?WAS_CALLED(ssh:connect({127,0,0,1}, 2022, [])),
-    ...trigger the ssh connection to close...
-    ?WAS_CALLED(ssh:close(ssh_ref)),
+    -include_lib("mockgyver/include/mockgyver.hrl").
+
+    ssh_test_() ->
+        ?WITH_MOCKED_SETUP(fun setup/0, fun cleanup/1).
+
+    setup() ->
+        ok.
+
+    cleanup(_) ->
+        ok.
+
+    sets_up_and_tears_down_ssh_connection_test(_) ->
+        ?WHEN(ssh:connect(_Host, _Port, _Opts) -> {ok, ssh_ref}),
+        ?WHEN(ssh:close(_ConnRef) -> ok),
+        ...start the program and trigger the ssh connection to open...
+        ?WAS_CALLED(ssh:connect({127,0,0,1}, 2022, [])),
+        ...trigger the ssh connection to close...
+        ?WAS_CALLED(ssh:close(ssh_ref)),
 
 History
 -------
