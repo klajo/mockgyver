@@ -179,25 +179,33 @@ can_verify_both_mocked_and_non_mocked_modules_test(_) ->
 
 handles_all_criterias_test(_) ->
     %% never
-    {error, _} = mockgyver:check_criteria(never, -1),
-    ok         = mockgyver:check_criteria(never, 0),
-    {error, _} = mockgyver:check_criteria(never, 1),
+    {error, {fewer_calls_than_expected, _, _}} =
+         mockgyver:check_criteria(never, -1),
+    ok = mockgyver:check_criteria(never, 0),
+    {error, {more_calls_than_expected, _, _}} =
+         mockgyver:check_criteria(never, 1),
     %% once
-    {error, _} = mockgyver:check_criteria(once, 0),
-    ok         = mockgyver:check_criteria(once, 1),
-    {error, _} = mockgyver:check_criteria(once, 2),
+    {error, {fewer_calls_than_expected, _, _}} =
+         mockgyver:check_criteria(once, 0),
+    ok = mockgyver:check_criteria(once, 1),
+    {error, {more_calls_than_expected, _, _}} =
+        mockgyver:check_criteria(once, 2),
     %% at_least
-    {error, _} = mockgyver:check_criteria({at_least, 0}, -1),
-    ok         = mockgyver:check_criteria({at_least, 0}, 0),
-    ok         = mockgyver:check_criteria({at_least, 0}, 1),
+    {error, {fewer_calls_than_expected, _, _}} =
+         mockgyver:check_criteria({at_least, 0}, -1),
+    ok = mockgyver:check_criteria({at_least, 0}, 0),
+    ok = mockgyver:check_criteria({at_least, 0}, 1),
     %% at_most
-    ok         = mockgyver:check_criteria({at_most, 0}, -1),
-    ok         = mockgyver:check_criteria({at_most, 0}, 0),
-    {error, _} = mockgyver:check_criteria({at_most, 0}, 1),
+    ok = mockgyver:check_criteria({at_most, 0}, -1),
+    ok = mockgyver:check_criteria({at_most, 0}, 0),
+    {error, {more_calls_than_expected, _, _}} =
+         mockgyver:check_criteria({at_most, 0}, 1),
     %% times
-    {error, _} = mockgyver:check_criteria({times, 0}, -1),
-    ok         = mockgyver:check_criteria({times, 0}, 0),
-    {error, _} = mockgyver:check_criteria({times, 0}, 1),
+    {error, {fewer_calls_than_expected, _, _}} =
+         mockgyver:check_criteria({times, 0}, -1),
+    ok = mockgyver:check_criteria({times, 0}, 0),
+    {error, {more_calls_than_expected, _, _}} =
+         mockgyver:check_criteria({times, 0}, 1),
     ok.
 
 returns_immediately_if_waiters_criteria_already_fulfilled_test(_) ->
@@ -207,6 +215,11 @@ returns_immediately_if_waiters_criteria_already_fulfilled_test(_) ->
 waits_until_waiters_criteria_fulfilled_test(_) ->
     spawn(fun() -> timer:sleep(50), mockgyver_dummy:return_arg(1) end),
     ?WAIT_CALLED(mockgyver_dummy:return_arg(N), once).
+
+fails_directly_if_waiters_criteria_already_surpassed_test(_) ->
+    mockgyver_dummy:return_arg(1),
+    mockgyver_dummy:return_arg(1),
+    ?assertError(_, ?WAIT_CALLED(mockgyver_dummy:return_arg(N), once)).
 
 returns_other_value_test(_) ->
     1  = mockgyver_dummy:return_arg(1),

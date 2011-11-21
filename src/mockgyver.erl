@@ -455,11 +455,16 @@ handle_call({verify, MFA, {wait_called, Criteria}}, From, State) ->
     case get_and_check_matches(MFA, Criteria, State) of
         {ok, _} = Reply ->
             {reply, Reply, State};
-        {error, {criteria_not_fulfilled, _, _}} ->
+        {error, {fewer_calls_than_expected, _, _}} ->
+            %% It only makes sense to enqueue waiters if their
+            %% criteria is not yet fulfilled - at least there's a
+            %% chance it might actually happen.
             Waiters = State#state.call_waiters,
             Waiter  = #call_waiter{from=From, mfa=MFA, crit=Criteria},
             {noreply, State#state{call_waiters = [Waiter | Waiters]}};
         {error, _} = Error ->
+            %% Fail directly if the waiter's criteria can never be
+            %% fulfilled, if the criteria syntax was bad, etc.
             {reply, Error, State}
     end;
 handle_call({verify, MFA, num_calls}, _From, State) ->
@@ -704,7 +709,20 @@ check_criteria_value({at_most, N}, X) when X =< N  -> ok;
 check_criteria_value({times, N}, N)                -> ok;
 check_criteria_value(never, 0)                     -> ok;
 check_criteria_value(Criteria, N) ->
-    {error, {criteria_not_fulfilled, {expected, Criteria}, {actual, N}}}.
+    Reason = case classify_relation_to_target_value(Criteria, N) of
+                 fewer -> fewer_calls_than_expected;
+                 more  -> more_calls_than_expected
+             end,
+    {error, {Reason, {expected, Criteria}, {actual, N}}}.
+
+classify_relation_to_target_value(once, X) when X < 1          -> fewer;
+classify_relation_to_target_value(once, X) when X > 1          -> more;
+classify_relation_to_target_value({at_least, N}, X) when X < N -> fewer;
+classify_relation_to_target_value({at_most, N}, X) when X > N  -> more;
+classify_relation_to_target_value({times, N}, X) when X < N    -> fewer;
+classify_relation_to_target_value({times, N}, X) when X > N    -> more;
+classify_relation_to_target_value(never, X) when X < 0         -> fewer;
+classify_relation_to_target_value(never, X) when X > 0         -> more.
 
 i_get_action({M,F,Args}, #state{actions=Actions}) ->
     A = length(Args),
