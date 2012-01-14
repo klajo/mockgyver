@@ -329,6 +329,8 @@
 
 -define(beam_num_bytes_alignment, 4). %% according to spec below
 
+-define(cand_resem_threshold, 5).
+
 -record(state, {actions=[], calls, session_mref, session_waiters=queue:new(),
                 call_waiters=[], mock_mfas=[], watch_mfas=[]}).
 -record(call, {m, f, a}).
@@ -540,11 +542,108 @@ handle_info(Info, State) ->
 
 possibly_print_call_waiters([], _Calls) ->
     ok;
-possibly_print_call_waiters(_Waiters, Calls) ->
+possibly_print_call_waiters(Waiters, Calls) ->
     io:format(user,
-              "Test died while waiting for a call.~n"
-              "    Calls so far: ~p~n",
-              [[{M, F, A} || #call{m=M, f=F, a=A} <- Calls]]).
+              "Test died while waiting for a call.~n~n"
+              "~s~n",
+              [[fmt_waiter_calls(Waiter, Calls) || Waiter <- Waiters]]).
+
+fmt_waiter_calls(#call_waiter{mfa={WaitM,WaitF,WaitA0}}=Waiter, Calls) ->
+    {arity, WaitA} = erlang:fun_info(WaitA0, arity),
+    CandMFAs = get_sorted_candidate_mfas(Waiter),
+    CallMFAs = sort_calls_according_to_waiters_wishes(Waiter, Calls),
+    lists:flatten(
+      [f("Waiter: ~p:~p/~p~n~n", [WaitM, WaitF, WaitA]),
+       case CandMFAs of
+           [] -> f("    Unfortunately there are no similar functions~n", []);
+           _  -> f("    Did you intend to verify one of these functions?~n"
+                   "~s~n",
+                   [fmt_candidate_mfas(CandMFAs, _Indent=8)])
+       end,
+       case CallMFAs of
+           [] -> f("    Unfortunately there are not registered calls~n", []);
+           _  -> f("    Registered calls in order of decreasing similarity:~n"
+                   "~s~n",
+                   [fmt_calls(CallMFAs, _Indent=8)])
+       end,
+       f("~n", [])]).
+
+fmt_calls(Calls, Indent) ->
+    string:join([fmt_call(Call, Indent) || Call <- Calls], ",\n").
+
+fmt_call(#call{m=M, f=F, a=As}, Indent) ->
+    Expr = erl_syntax:revert(
+             erl_syntax:application(erl_syntax:atom(M),
+                                    erl_syntax:atom(F),
+                                    [erl_syntax:abstract(A) || A <- As])),
+    string:chars($\s, Indent)
+        ++ lists:flatten(erl_pp:expr(Expr, Indent, _Hook=none)).
+
+sort_calls_according_to_waiters_wishes(#call_waiter{}=Waiter, Calls) ->
+    ResemCalls = lists:sort(fun({Resem1, #call{}}, {Resem2, #call{}}) ->
+                                    Resem1 =< Resem2
+                            end,
+                            calc_resemblance_for_calls(Waiter, Calls)),
+    [Call || {_Resem, #call{}=Call} <- ResemCalls].
+
+calc_resemblance_for_calls(#call_waiter{mfa={WaitM,WaitF,WaitA0}}, Calls) ->
+    {arity, WaitA} = erlang:fun_info(WaitA0, arity),
+    [{calc_mfa_resemblance({WaitM,WaitF,WaitA}, {CallM,CallF,length(CallA)}),
+      Call}||
+         #call{m=CallM, f=CallF, a=CallA}=Call <- Calls].
+
+fmt_candidate_mfas(CandMFAs, Indent) ->
+    [string:chars($\s, Indent) ++ f("~p:~p/~p~n", [CandM, CandF, CandA]) ||
+        {CandM, CandF, CandA} <- CandMFAs].
+
+get_sorted_candidate_mfas(#call_waiter{mfa={WaitM,WaitF,WaitA0}}=Waiter) ->
+    {arity, WaitA} = erlang:fun_info(WaitA0, arity),
+    WaitMFA = {WaitM, WaitF, WaitA},
+    CandMFAs = lists:sort(fun({Resem1, _CandMFA1}, {Resem2, _CandMFA2}) ->
+                                  Resem1 =< Resem2
+                          end,
+                          get_candidate_mfas_aux(get_candidate_modules(Waiter),
+                                                 WaitMFA)),
+    [CandMFA || {_Resem, CandMFA} <- CandMFAs].
+
+get_candidate_mfas_aux([CandM | CandMs], WaitMFA) ->
+    get_candidate_mfas_by_module(CandM, WaitMFA)
+        ++ get_candidate_mfas_aux(CandMs, WaitMFA);
+get_candidate_mfas_aux([], _WaitMFA) ->
+    [].
+
+get_candidate_mfas_by_module(CandM, WaitMFA) ->
+    CandFAs = CandM:module_info(exports),
+    lists:foldl(
+      fun(CandMFA, CandMFAs) ->
+              %% Only include similar MFAs
+              case calc_mfa_resemblance(WaitMFA, CandMFA) of
+                  Resem when Resem =< ?cand_resem_threshold ->
+                      [{Resem, CandMFA} | CandMFAs];
+                  _Resem ->
+                      CandMFAs
+              end
+      end,
+      [],
+      [{CandM, CandF, CandA} || {CandF, CandA} <- CandFAs]).
+
+%% Return a list of all loaded modules which are similar
+get_candidate_modules(#call_waiter{mfa={WaitM, _WaitF, _WaitA}}) ->
+    [CandM || {CandM, _Loaded} <- code:all_loaded(),
+              calc_atom_resemblance(WaitM, CandM) =< ?cand_resem_threshold,
+              not is_mocked_module(CandM)].
+
+is_mocked_module(M) ->
+    lists:suffix("^", atom_to_list(M)).
+
+%% Calculate a positive integer which corresponds to the similarity
+%% between two MFAs.  Returns 0 when they are equal.
+calc_mfa_resemblance({M1, F1, A1}, {M2, F2, A2}) ->
+    calc_atom_resemblance(M1, M2) + calc_atom_resemblance(F1, F2) + abs(A1-A2).
+
+calc_atom_resemblance(A1, A2) ->
+    calc_levenshtein_dist(atom_to_list(A1),
+                          atom_to_list(A2)).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -905,6 +1004,43 @@ get_exported_fas(Mod) ->
 
 get_non_bif_fas(Mod, FAs) ->
     [{F, A} || {F, A} <- FAs, not erlang:is_builtin(Mod, F, A)].
+
+%% Calculate the Levenshtein distance between two strings.
+%%     http://en.wikipedia.org/wiki/Levenshtein_distance
+%%
+%% Returns 0 when the strings are identical.  Returns at most a value
+%% which is equal to to the length of the longest string.
+%%
+%% Insertions, deletions and substitutions have the same weight.
+calc_levenshtein_dist(S, T) ->
+    calc_levenshtein_dist_t(S, T, lists:seq(0, length(S)), 0).
+
+%% Loop over the target string and calculate rows in the tables you'll
+%% find on web pages which describe the algoritm.  S is the source
+%% string, T the target string, Ds0 is the list of distances for the
+%% previous row and J is the base for the leftmost column.
+calc_levenshtein_dist_t(S, [_|TT]=T, Ds0, J) ->
+    Ds = calc_levenshtein_dist_s(S, T, Ds0, [J+1], J),
+    calc_levenshtein_dist_t(S, TT, Ds, J+1);
+calc_levenshtein_dist_t(_S, [], Ds, _J) ->
+    hd(lists:reverse(Ds)).
+
+%% Loop over the source string and calculate the columns for a
+%% specific row in the tables you'll find on web pages which describe
+%% the algoritm.
+calc_levenshtein_dist_s([SH|ST], [TH|_]=T, [DH|DT], AccDs, PrevD) ->
+    NextD = if SH==TH -> DH;
+               true   -> lists:min([PrevD+1,  % deletion
+                                    hd(DT)+1, % insertion
+                                    DH+1])    % substitution
+            end,
+    calc_levenshtein_dist_s(ST, T, DT, [NextD|AccDs], NextD);
+calc_levenshtein_dist_s([], _T, _Ds, AccDs, _PrevD) ->
+    lists:reverse(AccDs).
+
+
+f(Format, Args) ->
+    lists:flatten(io_lib:format(Format, Args)).
 
 %%-------------------------------------------------------------------
 %% Rename a module which is already compiled.
