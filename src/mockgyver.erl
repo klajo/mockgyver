@@ -329,7 +329,7 @@
 
 -define(beam_num_bytes_alignment, 4). %% according to spec below
 
--define(cand_resem_threshold, 5).
+-define(cand_resem_threshold, 5). %% threshold for similarity (0 = identical)
 
 -record(state, {actions=[], calls, session_mref, session_waiters=queue:new(),
                 call_waiters=[], mock_mfas=[], watch_mfas=[]}).
@@ -551,7 +551,7 @@ possibly_print_call_waiters(Waiters, Calls) ->
 fmt_waiter_calls(#call_waiter{mfa={WaitM,WaitF,WaitA0}}=Waiter, Calls) ->
     {arity, WaitA} = erlang:fun_info(WaitA0, arity),
     CandMFAs = get_sorted_candidate_mfas(Waiter),
-    CallMFAs = sort_calls_according_to_waiters_wishes(Waiter, Calls),
+    CallMFAs = get_sorted_calls_similar_to_waiter(Waiter, Calls),
     lists:flatten(
       [f("Waiter: ~p:~p/~p~n~n", [WaitM, WaitF, WaitA]),
        case CandMFAs of
@@ -579,11 +579,14 @@ fmt_call(#call{m=M, f=F, a=As}, Indent) ->
     string:chars($\s, Indent)
         ++ lists:flatten(erl_pp:expr(Expr, Indent, _Hook=none)).
 
-sort_calls_according_to_waiters_wishes(#call_waiter{}=Waiter, Calls) ->
+get_sorted_calls_similar_to_waiter(#call_waiter{}=Waiter, Calls) ->
+    ResemCalls0 = calc_resemblance_for_calls(Waiter, Calls),
+    ResemCalls1 = [ResemCall || {Resem, #call{}}=ResemCall <- ResemCalls0,
+                                Resem =< ?cand_resem_threshold],
     ResemCalls = lists:sort(fun({Resem1, #call{}}, {Resem2, #call{}}) ->
                                     Resem1 =< Resem2
                             end,
-                            calc_resemblance_for_calls(Waiter, Calls)),
+                            ResemCalls1),
     [Call || {_Resem, #call{}=Call} <- ResemCalls].
 
 calc_resemblance_for_calls(#call_waiter{mfa={WaitM,WaitF,WaitA0}}, Calls) ->
