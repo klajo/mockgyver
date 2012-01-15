@@ -266,7 +266,8 @@ mk_verify_checker_fun(Args0, Guard0) ->
     %%     end
 
     %% Rename all variables in the args list
-    {Args, NameMap0} = rename_vars(erl_syntax:list(Args0), fun(_) -> true end),
+    {Args1, NameMap0} = rename_vars(erl_syntax:list(Args0), fun(_) -> true end),
+    Args = erl_syntax:list_elements(Args1),
     %% Rename only variables in guards which are also present in the args list
     RenameVars = [N0 || {N0, _N1} <- NameMap0],
     {Guard, _NameMap1} =
@@ -282,7 +283,7 @@ mk_verify_checker_fun(Args0, Guard0) ->
         %% avoid the "unused variable" warning
         ++ [erl_syntax:list([erl_syntax:variable(N0) ||
                                 {N0, _N1} <- NameMap0])],
-    Clause = erl_syntax:clause([Args], Guard, Body),
+    Clause = erl_syntax:clause(Args, Guard, Body),
     Clauses = parse_trans:revert([Clause]),
     erl_syntax:revert(erl_syntax:fun_expr(Clauses)).
 

@@ -776,10 +776,12 @@ remove_matching_calls({_M, _F, _A} = ExpectMFA, #state{calls=Calls0}=State) ->
 is_match({CallM,CallF,CallA}, {ExpectM,ExpectF,ExpectA}) when CallM==ExpectM,
                                                               CallF==ExpectF ->
     try
-        ExpectA(CallA),
+        apply(ExpectA, CallA),
         true
     catch
-        error:function_clause -> % when arity or guards don't match
+        error:function_clause -> % when guards don't match
+            false;
+        error:{badarity, _} ->        % when arity doesn't match
             false;
         error:{badmatch, _} ->   % when previously bound vars don't match
             false
@@ -952,6 +954,9 @@ mk_mod(Mod, FuncForms) ->
                                     [erl_syntax:abstract(Mod)])]
               ++ FuncForms),
     Forms = [erl_syntax:revert(Form) || Form <- Forms0],
+    %%io:format("--------------------------------------------------~n"
+    %%          "~s~n",
+    %%          [[erl_pp:form(Form) || Form <- Forms]]),
     {ok, Mod, Bin} = compile:forms(Forms, [report, export_all]),
     {module, Mod} = code:load_binary(Mod, "mock", Bin).
 
