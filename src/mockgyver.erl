@@ -869,11 +869,31 @@ mock_and_load_mods(MFAs) ->
 mock_and_load_mod({Mod, UserAddedFAs}) ->
     case get_exported_fas(Mod) of
         {ok, ExportedFAs} ->
+            ok = possibly_unstick_mod(Mod),
             OrigMod = reload_mod_under_different_name(Mod),
             FAs = get_non_bif_fas(Mod, lists:usort(ExportedFAs++UserAddedFAs)),
             mk_mocking_mod(Mod, OrigMod, FAs);
         {error, {no_such_module, Mod}} ->
             mk_new_mod(Mod, UserAddedFAs)
+    end.
+
+possibly_unstick_mod(Mod) ->
+    case code:is_sticky(Mod) of
+        true ->
+            case code:which(Mod) of
+                Filename when is_list(Filename) ->
+                    case code:unstick_dir(filename:dirname(Filename)) of
+                        ok ->
+                            ok;
+                        {error, Reason} ->
+                            erlang:error({failed_to_unstick_module,Mod,Reason})
+                    end;
+                Other ->
+                    erlang:error({failed_to_unstick_module, Mod,
+                                  {code_which_output, Other}})
+            end;
+        false ->
+            ok
     end.
 
 reload_mod_under_different_name(Mod) ->
