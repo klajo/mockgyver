@@ -124,6 +124,17 @@ variable: underscore.
 
 <h5><a name="Examples">Examples</a></h5>
 
+
+   
+Note: Apparently the Erlang/OTP team doesn't want us to redefine   
+PI to 4 anymore :-), since starting at R15B, math:pi/0 is marked as   
+pure which means that the compiler is allowed to replace the   
+math:pi() function call by a constant: 3.14...  This means that   
+even though mockgyver can mock the pi/0 function, a test case will   
+never call math:pi/0 since it will be inlined.  See commit   
+5adf009cb09295893e6bb01b4666a569590e0f19 (compiler: Turn calls to   
+math:pi/0 into constant values) in the otp sources.
+
 Redefine pi to 4:
 <pre>       ?WHEN(math:pi() -> 4),</pre>
 Implement a mock with multiple clauses:

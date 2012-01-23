@@ -253,10 +253,12 @@ can_use_multi_clause_functions_test(_) ->
     negative = mockgyver_dummy:return_arg(-1).
 
 fails_gracefully_when_mocking_a_bif_test(_) ->
-    %% pi/0 should be successfully mocked -- it's a regular function
-    ?WHEN(math:pi() -> 4),
-    4 = math:pi(),
-    %% cos/1 should still work (uses the bif)
+    %% previously the test checked that pi/0 could be successfully
+    %% mocked here -- it's a non-bif function -- but starting at
+    %% Erlang/OTP R15B this is marked as a pure function which means that
+    %% the compiler will inline it into the testcase so we cannot mock it.
+    %%
+    %% cos/1 should work (uses the bif)
     1.0 = math:cos(0),
     %% mocking the bif should fail gracefully
     ?assertError({cannot_mock_bif, {math, cos, 1}}, ?WHEN(math:cos(_) -> 0)).
