@@ -31,7 +31,7 @@
                            ?FOR_ALL_TIMEOUT, ?PER_TC_TIMEOUT)).
 
 -define(WRAP(Type, Expr),
-        {'$mock', Type, Expr}).
+        {'$mock', Type, Expr, {?FILE, ?LINE}}).
 
 -define(MOCK(Expr), ?WRAP(m_init, (Expr))).
 

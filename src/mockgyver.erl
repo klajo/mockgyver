@@ -324,8 +324,8 @@
 -export([start_link/0]).
 -export([stop/0]).
 
--export([reg_call_and_get_action/1, get_action/1, set_action/1]).
--export([verify/2]).
+-export([reg_call_and_get_action/1, get_action/1, set_action/1, set_action/2]).
+-export([verify/2, verify/3]).
 
 %% For test
 -export([check_criteria/2]).
@@ -344,7 +344,7 @@
                 call_waiters=[], mock_mfas=[], watch_mfas=[]}).
 -record(call, {m, f, a}).
 -record(action, {mfa, func}).
--record(call_waiter, {from, mfa, crit}).
+-record(call_waiter, {from, mfa, crit, loc}).
 
 %-record(trace, {msg}).
 -record('DOWN', {mref, type, obj, info}).
@@ -375,7 +375,11 @@ get_action(MFA) ->
 
 %% @private
 set_action(MFA) ->
-    chk(call({set_action, MFA})).
+    set_action(MFA, _Opts=[]).
+
+%% @private
+set_action(MFA, Opts) ->
+    chk(call({set_action, MFA, Opts})).
 
 %% @private
 start_link() ->
@@ -401,8 +405,12 @@ end_session() ->
 %% @private
 %% once | {at_least, N} | {at_most, N} | {times, N} | never
 verify({M, F, A}, Criteria) ->
+    verify({M, F, A}, Criteria, _Opts=[]).
+
+%% @private
+verify({M, F, A}, Criteria, Opts) ->
     wait_until_trace_delivered(),
-    chk(call({verify, {M, F, A}, Criteria})).
+    chk(call({verify, {M, F, A}, Criteria, Opts})).
 
 
 %%%===================================================================
@@ -456,13 +464,13 @@ handle_call({reg_call_and_get_action, MFA}, _From, State0) ->
 handle_call({get_action, MFA}, _From, State) ->
     ActionFun = i_get_action(MFA, State),
     {reply, ActionFun, State};
-handle_call({set_action, MFA}, _From, State0) ->
-    {Reply, State} = i_set_action(MFA, State0),
+handle_call({set_action, MFA, Opts}, _From, State0) ->
+    {Reply, State} = i_set_action(MFA, Opts, State0),
     {reply, Reply, State};
-handle_call({verify, MFA, {was_called, Criteria}}, _From, State) ->
+handle_call({verify, MFA, {was_called, Criteria}, Opts}, _From, State) ->
     Reply = get_and_check_matches(MFA, Criteria, State),
-    {reply, Reply, State};
-handle_call({verify, MFA, {wait_called, Criteria}}, From, State) ->
+    {reply, possibly_add_location(Reply, Opts), State};
+handle_call({verify, MFA, {wait_called, Criteria}, Opts}, From, State) ->
     case get_and_check_matches(MFA, Criteria, State) of
         {ok, _} = Reply ->
             {reply, Reply, State};
@@ -471,23 +479,24 @@ handle_call({verify, MFA, {wait_called, Criteria}}, From, State) ->
             %% criteria is not yet fulfilled - at least there's a
             %% chance it might actually happen.
             Waiters = State#state.call_waiters,
-            Waiter  = #call_waiter{from=From, mfa=MFA, crit=Criteria},
+            Waiter  = #call_waiter{from=From, mfa=MFA, crit=Criteria,
+                                   loc=proplists:get_value(location, Opts)},
             {noreply, State#state{call_waiters = [Waiter | Waiters]}};
         {error, _} = Error ->
             %% Fail directly if the waiter's criteria can never be
             %% fulfilled, if the criteria syntax was bad, etc.
-            {reply, Error, State}
+            {reply, possibly_add_location(Error, Opts), State}
     end;
-handle_call({verify, MFA, num_calls}, _From, State) ->
+handle_call({verify, MFA, num_calls, _Opts}, _From, State) ->
     Matches = get_matches(MFA, State),
     {reply, {ok, length(Matches)}, State};
-handle_call({verify, MFA, get_calls}, _From, State) ->
+handle_call({verify, MFA, get_calls, _Opts}, _From, State) ->
     Matches = get_matches(MFA, State),
     {reply, {ok, Matches}, State};
-handle_call({verify, MFA, forget_when}, _From, State0) ->
+handle_call({verify, MFA, forget_when, _Opts}, _From, State0) ->
     State = i_forget_action(MFA, State0),
     {reply, ok, State};
-handle_call({verify, MFA, forget_calls}, _From, State0) ->
+handle_call({verify, MFA, forget_calls, _Opts}, _From, State0) ->
     State = remove_matching_calls(MFA, State0),
     {reply, ok, State};
 handle_call(stop, _From, State) ->
@@ -557,12 +566,13 @@ possibly_print_call_waiters(Waiters, Calls) ->
               "~s~n",
               [[fmt_waiter_calls(Waiter, Calls) || Waiter <- Waiters]]).
 
-fmt_waiter_calls(#call_waiter{mfa={WaitM,WaitF,WaitA0}}=Waiter, Calls) ->
+fmt_waiter_calls(#call_waiter{mfa={WaitM,WaitF,WaitA0}, loc={File,Line}}=Waiter,
+                 Calls) ->
     {arity, WaitA} = erlang:fun_info(WaitA0, arity),
     CandMFAs = get_sorted_candidate_mfas(Waiter),
     CallMFAs = get_sorted_calls_similar_to_waiter(Waiter, Calls),
     lists:flatten(
-      [f("Waiter: ~p:~p/~p~n~n", [WaitM, WaitF, WaitA]),
+      [f("~s:~p:~n    Waiter: ~p:~p/~p~n~n", [File, Line, WaitM, WaitF, WaitA]),
        case CandMFAs of
            [] -> f("    Unfortunately there are no similar functions~n", []);
            _  -> f("    Did you intend to verify one of these functions?~n"
@@ -844,7 +854,7 @@ i_get_action({M,F,Args}, #state{actions=Actions}) ->
         false                            -> undefined
     end.
 
-i_set_action({M, F, ActionFun}, #state{actions=Actions0} = State) ->
+i_set_action({M, F, ActionFun}, _Opts, #state{actions=Actions0} = State) ->
     {arity, A} = erlang:fun_info(ActionFun, arity),
     MFA = {M, F, A},
     case erlang:is_builtin(M, F, A) of
@@ -866,9 +876,22 @@ wait_until_trace_delivered() ->
     Ref = erlang:trace_delivered(all),
     receive {trace_delivered, _, Ref} -> ok end.
 
-chk(ok)              -> ok;
-chk({ok, Value})     -> Value;
-chk({error, Reason}) -> erlang:error(Reason).
+chk(ok)                        -> ok;
+chk({ok, Value})               -> Value;
+chk({error, Reason})           -> erlang:error(Reason);
+chk({error, Reason, Location}) -> erlang:error({{reason, Reason},
+                                                {location, Location}}).
+
+possibly_add_location({error, Reason}, Opts) ->
+    case proplists:get_value(location, Opts) of
+        undefined -> {error, Reason};
+        Location  -> {error, Reason, Location}
+    end;
+possibly_add_location(ok, _Opts) ->
+    ok;
+possibly_add_location({ok, _}=OkRes, _Opts) ->
+    OkRes.
+
 
 mock_and_load_mods(MFAs) ->
     ModsFAs = group_fas_by_mod(MFAs),

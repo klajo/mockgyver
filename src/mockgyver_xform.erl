@@ -51,9 +51,9 @@
 -export([parse_transform/2]).
 
 %% Records
--record(m_init, {exec_fun}).
--record(m_when, {m, f, a, action}).
--record(m_verify, {m, f, a, g, crit}).
+-record(m_init, {exec_fun, loc}).
+-record(m_when, {m, f, a, action, loc}).
+-record(m_verify, {m, f, a, g, crit, loc}).
 
 -record(env, {mock_mfas, trace_mfas}).
 
@@ -104,12 +104,13 @@ rewrite_when_stmts(Forms, Ctxt) ->
 
 rewrite_when_stmts_2(Type, Form0, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form0) of
-        {true, #m_when{m=M, f=F, action=ActionFun}} ->
+        {true, #m_when{m=M, f=F, action=ActionFun, loc=Location}} ->
             Befores = [],
             [Form] = codegen:exprs(
                        fun() ->
-                               mockgyver:set_action({{'$var', M}, {'$var', F},
-                                                     {'$form', ActionFun}})
+                               mockgyver:set_action(
+                                 {{'$var',M}, {'$var',F}, {'$form',ActionFun}},
+                                 [{location, {'$var',Location}}])
                        end),
             Afters = [],
             {Befores, Form, Afters, false, Acc};
@@ -139,14 +140,15 @@ rewrite_verify_stmts(Forms, Ctxt) ->
 
 rewrite_verify_stmts_2(Type, Form0, _Ctxt, Acc) ->
     case is_mock_expr(Type, Form0) of
-        {true, #m_verify{m=M, f=F, a=A, g=G, crit=C}} ->
+        {true, #m_verify{m=M, f=F, a=A, g=G, crit=C, loc=Location}} ->
             Fun = mk_verify_checker_fun(A, G),
             Befores = [],
             [Form] = codegen:exprs(
                        fun() ->
                                mockgyver:verify(
                                  {{'$var', M}, {'$var', F}, {'$form', Fun}},
-                                 {'$form', C})
+                                 {'$form', C},
+                                 [{location, {'$var', Location}}])
                        end),
             Afters = [],
             {Befores, Form, Afters, false, Acc};
@@ -184,17 +186,18 @@ is_mock_expr(tuple, Form) ->
 is_mock_expr(_Type, _Form) ->
     false.
 
-analyze_mock_form([Type, Expr]) ->
+analyze_mock_form([Type, Expr, Location0]) ->
+    Location = erl_syntax:concrete(Location0),
     case erl_syntax:atom_value(Type) of
-        m_init   -> analyze_init_expr(Expr);
-        m_when   -> analyze_when_expr(Expr);
-        m_verify -> analyze_verify_expr(Expr)
+        m_init   -> analyze_init_expr(Expr, Location);
+        m_when   -> analyze_when_expr(Expr, Location);
+        m_verify -> analyze_verify_expr(Expr, Location)
     end.
 
-analyze_init_expr(Expr) ->
-    #m_init{exec_fun=Expr}.
+analyze_init_expr(Expr, Location) ->
+    #m_init{exec_fun=Expr, loc=Location}.
 
-analyze_when_expr(Expr) ->
+analyze_when_expr(Expr, Location) ->
     %% The sole purpose of the entire if expression is to let us write
     %%     ?WHEN(m:f(_) -> some_result).
     %% or
@@ -211,7 +214,7 @@ analyze_when_expr(Expr) ->
                         end,
                         Clauses0),
     ActionFun = erl_syntax:fun_expr(Clauses),
-    #m_when{m=M, f=F, a=A, action=ActionFun}.
+    #m_when{m=M, f=F, a=A, action=ActionFun, loc=Location}.
 
 ensure_all_clauses_implement_the_same_function(Clauses) ->
     lists:foldl(fun(Clause, undefined) ->
@@ -234,13 +237,14 @@ get_when_call_sig(Clause) ->
     {M, F, A} = analyze_application(Call),
     {M, F, length(A)}.
 
-analyze_verify_expr(Form) ->
+analyze_verify_expr(Form, Location) ->
     [Case, Criteria] = erl_syntax:tuple_elements(Form),
     [Clause | _] = erl_syntax:case_expr_clauses(Case),
     [Call | _] = erl_syntax:clause_patterns(Clause),
     G = erl_syntax:clause_guard(Clause),
     {M, F, A} = analyze_application(Call),
-    #m_verify{m=M, f=F, a=A, g=G, crit=erl_syntax:revert(Criteria)}.
+    #m_verify{m=M, f=F, a=A, g=G, crit=erl_syntax:revert(Criteria),
+              loc=Location}.
 
 mk_verify_checker_fun(Args0, Guard0) ->
     %% Let's say there's a statement like this:

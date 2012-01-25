@@ -150,7 +150,8 @@ allows_variables_in_criteria_test(_) ->
 returns_error_on_invalid_criteria_test(_) ->
     lists:foreach(
       fun(C) ->
-              ?assertError({invalid_criteria, C},
+              ?assertError({{reason, {invalid_criteria, C}},
+                            {location, _}},
                            ?WAS_CALLED(mockgyver_dummy:return_arg(_), C))
       end,
       [0,
