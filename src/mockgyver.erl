@@ -887,8 +887,6 @@ possibly_add_location({error, Reason}, Opts) ->
         undefined -> {error, Reason};
         Location  -> {error, Reason, Location}
     end;
-possibly_add_location(ok, _Opts) ->
-    ok;
 possibly_add_location({ok, _}=OkRes, _Opts) ->
     OkRes.
 
@@ -917,8 +915,8 @@ possibly_unstick_mod(Mod) ->
                     case code:unstick_dir(filename:dirname(Filename)) of
                         ok ->
                             ok;
-                        {error, Reason} ->
-                            erlang:error({failed_to_unstick_module,Mod,Reason})
+                        error ->
+                            erlang:error({failed_to_unstick_module, Mod})
                     end;
                 Other ->
                     erlang:error({failed_to_unstick_module, Mod,
