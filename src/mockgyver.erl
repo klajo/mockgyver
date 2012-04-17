@@ -678,7 +678,8 @@ calc_atom_resemblance(A1, A2) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(_Reason, State) ->
+    i_end_session(State), % ensure mock modules are unloaded when terminating
     ok.
 
 %%--------------------------------------------------------------------
