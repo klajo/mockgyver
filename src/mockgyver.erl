@@ -703,6 +703,7 @@ i_start_session(MockMFAs, WatchMFAs, Pid, State0) ->
     State = State0#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs},
     MockMods = get_unique_mods_by_mfas(MockMFAs),
     mock_and_load_mods(MockMFAs),
+    possibly_shutdown_old_tracer(),
     erlang:trace(all, true, [call, {tracer, self()}]),
     %% We mustn't trace non-mocked modules, since we'll register
     %% calls for those as part of reg_call_and_get_action.  If we
@@ -715,6 +716,46 @@ i_start_session(MockMFAs, WatchMFAs, Pid, State0) ->
             {ok, State#state{calls=[], session_mref=MRef}};
         {error, _}=Error ->
             {Error, i_end_session(State)}
+    end.
+
+possibly_shutdown_old_tracer() ->
+    %% The problem here is that a process may only be traced by one
+    %% and only one other process.  We need the traces to record what
+    %% happens for the validation afterwards.  One could perhaps
+    %% design a complicated trace relay, but at least for the time
+    %% being we stop the current tracer (if any) and add ourselves as
+    %% the sole tracer.
+    case get_orig_tracer_info() of
+        {_Tracer, Flags} ->
+            %% One could warn the user about this happening, but
+            %% what's a good way of doing that?
+            %%
+            %% * error_logger:info_msg/warning_msg is always shown
+            %%   ==> clutters eunit results in the shell and there's
+            %%       no way of turning that off
+            %%
+            %% * io:format(Format, Args) is only shown if an eunit
+            %%   test case fails (I think), increasing the verbosity
+            %%   doesn't help
+            %%   ==> bad, since one would like to see the warning at
+            %%       least in verbose mode
+            %%
+            %% * io:format(user, Format, Args) is always shown
+            %%   ==> see error_logger bullet above
+            %%
+            %% Just silently steal the trace.
+            erlang:trace(all, false, Flags);
+        undefined ->
+            ok
+    end.
+
+get_orig_tracer_info() ->
+    case erlang:trace_info(new, tracer) of
+        {tracer, []} ->
+            undefined;
+        {tracer, Tracer} ->
+            {flags, Flags} = erlang:trace_info(new, flags),
+            {Tracer, Flags}
     end.
 
 setup_trace_on_all_mfas(MFAs) ->
