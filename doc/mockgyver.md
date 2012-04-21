@@ -11,7 +11,7 @@ Mock functions and modules.
 
 Copyright (c) 2011, Klas Johansson
 
-__Behaviours:__ [`gen_server`](gen_server.md).
+__Behaviours:__ [`gen_fsm`](gen_fsm.md).
 
 __Authors:__ Klas Johansson.<a name="description"></a>
 

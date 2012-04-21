@@ -312,7 +312,7 @@
 %%%-------------------------------------------------------------------
 -module(mockgyver).
 
--behaviour(gen_server).
+-behaviour(gen_fsm).
 
 %% This transform makes it easier for this module to generate code.
 %% Depends on a 3pp library (http://github.com/esl/parse_trans).
@@ -330,9 +330,10 @@
 %% For test
 -export([check_criteria/2]).
 
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+%% gen_fsm callbacks
+-export([init/1, no_session/2, no_session/3, session/2, session/3,
+         handle_event/3, handle_sync_event/4, handle_info/3,
+         terminate/3, code_change/4]).
 
 -define(SERVER, ?MODULE).
 
@@ -367,11 +368,11 @@ exec(MockMFAs, WatchMFAs, Fun) ->
 
 %% @private
 reg_call_and_get_action(MFA) ->
-    call({reg_call_and_get_action, MFA}).
+    sync_send_event({reg_call_and_get_action, MFA}).
 
 %% @private
 get_action(MFA) ->
-    call({get_action, MFA}).
+    sync_send_event({get_action, MFA}).
 
 %% @private
 set_action(MFA) ->
@@ -379,15 +380,15 @@ set_action(MFA) ->
 
 %% @private
 set_action(MFA, Opts) ->
-    chk(call({set_action, MFA, Opts})).
+    chk(sync_send_event({set_action, MFA, Opts})).
 
 %% @private
 start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
+    gen_fsm:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
 %% @private
 stop() ->
-    call(stop).
+    sync_send_all_state_event(stop).
 
 ensure_application_started() ->
     case application:start(?MODULE) of
@@ -397,10 +398,10 @@ ensure_application_started() ->
     end.
 
 start_session(MockMFAs, WatchMFAs) ->
-    call({start_session, MockMFAs, WatchMFAs, self()}).
+    sync_send_event({start_session, MockMFAs, WatchMFAs, self()}).
 
 end_session() ->
-    call(end_session).
+    sync_send_event(end_session).
 
 %% @private
 %% once | {at_least, N} | {at_most, N} | {times, N} | never
@@ -410,70 +411,135 @@ verify({M, F, A}, Criteria) ->
 %% @private
 verify({M, F, A}, Criteria, Opts) ->
     wait_until_trace_delivered(),
-    chk(call({verify, {M, F, A}, Criteria, Opts})).
-
+    chk(sync_send_event({verify, {M, F, A}, Criteria, Opts})).
 
 %%%===================================================================
-%%% gen_server callbacks
+%%% gen_fsm callbacks
 %%%===================================================================
 
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% Initializes the server
+%% Whenever a gen_fsm is started using gen_fsm:start/[3,4] or
+%% gen_fsm:start_link/[3,4], this function is called by the new
+%% process to initialize.
 %%
-%% @spec init(Args) -> {ok, State} |
-%%                     {ok, State, Timeout} |
+%% @spec init(Args) -> {ok, StateName, State} |
+%%                     {ok, StateName, State, Timeout} |
 %%                     ignore |
-%%                     {stop, Reason}
+%%                     {stop, StopReason}
 %% @end
 %%--------------------------------------------------------------------
 init({}) ->
-    {ok, #state{}}.
+    {ok, no_session, #state{}}.
 
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% Handling call messages
+%% There should be one instance of this function for each possible
+%% state name. Whenever a gen_fsm receives an event sent using
+%% gen_fsm:send_event/2, the instance of this function with the same
+%% name as the current state name StateName is called to handle
+%% the event. It is also called if a timeout occurs.
 %%
-%% @spec handle_call(Request, From, State) ->
-%%                                   {reply, Reply, State} |
-%%                                   {reply, Reply, State, Timeout} |
-%%                                   {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, Reply, State} |
-%%                                   {stop, Reason, State}
+%% @spec no_session(Event, State) ->
+%%                   {next_state, NextStateName, NextState} |
+%%                   {next_state, NextStateName, NextState, Timeout} |
+%%                   {stop, Reason, NewState}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({start_session, MockMFAs, WatchMFAs, Pid}, From, State0) ->
-    case is_within_session(State0) of
-        false ->
-            {Reply, State} = i_start_session(MockMFAs, WatchMFAs, Pid, State0),
-            {reply, Reply, State};
-        true ->
-            {noreply, enqueue_session({From, MockMFAs, WatchMFAs, Pid}, State0)}
-    end;
-handle_call(end_session, _From, State0) ->
+no_session(_Event, State) ->
+    {next_state, state_name, State}.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% There should be one instance of this function for each possible
+%% state name. Whenever a gen_fsm receives an event sent using
+%% gen_fsm:sync_send_event/[2,3], the instance of this function with
+%% the same name as the current state name StateName is called to
+%% handle the event.
+%%
+%% @spec no_session(Event, From, State) ->
+%%                   {next_state, NextStateName, NextState} |
+%%                   {next_state, NextStateName, NextState, Timeout} |
+%%                   {reply, Reply, NextStateName, NextState} |
+%%                   {reply, Reply, NextStateName, NextState, Timeout} |
+%%                   {stop, Reason, NewState} |
+%%                   {stop, Reason, Reply, NewState}
+%% @end
+%%--------------------------------------------------------------------
+no_session({start_session, MockMFAs, WatchMFAs, Pid}, _From, State0) ->
+    {Reply, State} = i_start_session(MockMFAs, WatchMFAs, Pid, State0),
+    {reply, Reply, session, State};
+no_session({set_action, _MFA, _Opts}, _From, State) ->
+    {reply, {error, mocking_not_started}, no_session, State};
+no_session({verify, _MFA, _Operation, _Opts}, _From, State) ->
+    {reply, {error, mocking_not_started}, no_session, State}.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% There should be one instance of this function for each possible
+%% state name. Whenever a gen_fsm receives an event sent using
+%% gen_fsm:send_event/2, the instance of this function with the same
+%% name as the current state name StateName is called to handle
+%% the event. It is also called if a timeout occurs.
+%%
+%% @spec session(Event, State) ->
+%%                   {next_state, NextStateName, NextState} |
+%%                   {next_state, NextStateName, NextState, Timeout} |
+%%                   {stop, Reason, NewState}
+%% @end
+%%--------------------------------------------------------------------
+session(_Event, State) ->
+    {next_state, state_name, State}.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% There should be one instance of this function for each possible
+%% state name. Whenever a gen_fsm receives an event sent using
+%% gen_fsm:sync_send_event/[2,3], the instance of this function with
+%% the same name as the current state name StateName is called to
+%% handle the event.
+%%
+%% @spec session(Event, From, State) ->
+%%                   {next_state, NextStateName, NextState} |
+%%                   {next_state, NextStateName, NextState, Timeout} |
+%%                   {reply, Reply, NextStateName, NextState} |
+%%                   {reply, Reply, NextStateName, NextState, Timeout} |
+%%                   {stop, Reason, NewState} |
+%%                   {stop, Reason, Reply, NewState}
+%% @end
+%%--------------------------------------------------------------------
+session({start_session, MockMFAs, WatchMFAs, Pid}, From, State0) ->
+    State = enqueue_session({From, MockMFAs, WatchMFAs, Pid}, State0),
+    {next_state, session, State};
+session(end_session, _From, State0) ->
     State1 = i_end_session(State0),
     State = possibly_dequeue_session(State1),
-    {reply, ok, State};
-handle_call({reg_call_and_get_action, MFA}, _From, State0) ->
+    case is_within_session(State) of
+        true  -> {reply, ok, session, State};
+        false -> {reply, ok, no_session, State}
+    end;
+session({reg_call_and_get_action, MFA}, _From, State0) ->
     State = register_call(MFA, State0),
     ActionFun = i_get_action(MFA, State),
-    {reply, ActionFun, State};
-handle_call({get_action, MFA}, _From, State) ->
+    {reply, ActionFun, session, State};
+session({get_action, MFA}, _From, State) ->
     ActionFun = i_get_action(MFA, State),
-    {reply, ActionFun, State};
-handle_call({set_action, MFA, Opts}, _From, State0) ->
+    {reply, ActionFun, session, State};
+session({set_action, MFA, Opts}, _From, State0) ->
     {Reply, State} = i_set_action(MFA, Opts, State0),
-    {reply, Reply, State};
-handle_call({verify, MFA, {was_called, Criteria}, Opts}, _From, State) ->
+    {reply, Reply, session, State};
+session({verify, MFA, {was_called, Criteria}, Opts}, _From, State) ->
     Reply = get_and_check_matches(MFA, Criteria, State),
-    {reply, possibly_add_location(Reply, Opts), State};
-handle_call({verify, MFA, {wait_called, Criteria}, Opts}, From, State) ->
+    {reply, possibly_add_location(Reply, Opts), session, State};
+session({verify, MFA, {wait_called, Criteria}, Opts}, From, State) ->
     case get_and_check_matches(MFA, Criteria, State) of
         {ok, _} = Reply ->
-            {reply, Reply, State};
+            {reply, Reply, session, State};
         {error, {fewer_calls_than_expected, _, _}} ->
             %% It only makes sense to enqueue waiters if their
             %% criteria is not yet fulfilled - at least there's a
@@ -481,26 +547,90 @@ handle_call({verify, MFA, {wait_called, Criteria}, Opts}, From, State) ->
             Waiters = State#state.call_waiters,
             Waiter  = #call_waiter{from=From, mfa=MFA, crit=Criteria,
                                    loc=proplists:get_value(location, Opts)},
-            {noreply, State#state{call_waiters = [Waiter | Waiters]}};
+            {next_state, session, State#state{call_waiters = [Waiter|Waiters]}};
         {error, _} = Error ->
             %% Fail directly if the waiter's criteria can never be
             %% fulfilled, if the criteria syntax was bad, etc.
-            {reply, possibly_add_location(Error, Opts), State}
+            {reply, possibly_add_location(Error, Opts), session, State}
     end;
-handle_call({verify, MFA, num_calls, _Opts}, _From, State) ->
+session({verify, MFA, num_calls, _Opts}, _From, State) ->
     Matches = get_matches(MFA, State),
-    {reply, {ok, length(Matches)}, State};
-handle_call({verify, MFA, get_calls, _Opts}, _From, State) ->
+    {reply, {ok, length(Matches)}, session, State};
+session({verify, MFA, get_calls, _Opts}, _From, State) ->
     Matches = get_matches(MFA, State),
-    {reply, {ok, Matches}, State};
-handle_call({verify, MFA, forget_when, _Opts}, _From, State0) ->
+    {reply, {ok, Matches}, session, State};
+session({verify, MFA, forget_when, _Opts}, _From, State0) ->
     State = i_forget_action(MFA, State0),
-    {reply, ok, State};
-handle_call({verify, MFA, forget_calls, _Opts}, _From, State0) ->
+    {reply, ok, session, State};
+session({verify, MFA, forget_calls, _Opts}, _From, State0) ->
     State = remove_matching_calls(MFA, State0),
-    {reply, ok, State};
-handle_call(stop, _From, State) ->
+    {reply, ok, session, State}.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Whenever a gen_fsm receives an event sent using
+%% gen_fsm:send_all_state_event/2, this function is called to handle
+%% the event.
+%%
+%% @spec handle_event(Event, StateName, State) ->
+%%                   {next_state, NextStateName, NextState} |
+%%                   {next_state, NextStateName, NextState, Timeout} |
+%%                   {stop, Reason, NewState}
+%% @end
+%%--------------------------------------------------------------------
+handle_event(_Event, StateName, State) ->
+    {next_state, StateName, State}.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Whenever a gen_fsm receives an event sent using
+%% gen_fsm:sync_send_all_state_event/[2,3], this function is called
+%% to handle the event.
+%%
+%% @spec handle_sync_event(Event, From, StateName, State) ->
+%%                   {next_state, NextStateName, NextState} |
+%%                   {next_state, NextStateName, NextState, Timeout} |
+%%                   {reply, Reply, NextStateName, NextState} |
+%%                   {reply, Reply, NextStateName, NextState, Timeout} |
+%%                   {stop, Reason, NewState} |
+%%                   {stop, Reason, Reply, NewState}
+%% @end
+%%--------------------------------------------------------------------
+handle_sync_event(stop, _From, _StateName, State) ->
     {stop, normal, ok, State}.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% This function is called by a gen_fsm when it receives any
+%% message other than a synchronous or asynchronous event
+%% (or a system message).
+%%
+%% @spec handle_info(Info,StateName,State)->
+%%                   {next_state, NextStateName, NextState} |
+%%                   {next_state, NextStateName, NextState, Timeout} |
+%%                   {stop, Reason, NewState}
+%% @end
+%%--------------------------------------------------------------------
+handle_info(#'DOWN'{mref=MRef}, StateName, #state{session_mref=MRef,
+                                                  call_waiters=Waiters,
+                                                  calls=Calls}=State0) ->
+    %% The test died before it got a chance to clean up after itself.
+    %% Check whether there are any pending waiters.  If so, just print
+    %% the calls we've logged so far.  Hopefully that helps in
+    %% debugging.  This is probably the best we can accomplish -- being
+    %% able to fail the eunit test would be nice.  Another day perhaps.
+    possibly_print_call_waiters(Waiters, Calls),
+    State = i_end_session(State0),
+    {next_state, StateName, State};
+handle_info({trace, _, call, MFA}, StateName, State0) ->
+    State = register_call(MFA, State0),
+    {next_state, StateName, State};
+handle_info(Info, StateName, State) ->
+    io:format(user, "~p got message: ~p~n", [?MODULE, Info]),
+    {next_state, StateName, State}.
 
 is_within_session(#state{session_mref=MRef}) -> MRef =/= undefined.
 
@@ -516,47 +646,6 @@ possibly_dequeue_session(#state{session_waiters=Waiters0}=State0) ->
         {empty, _} ->
             State0
     end.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling cast messages
-%%
-%% @spec handle_cast(Msg, State) -> {noreply, State} |
-%%                                  {noreply, State, Timeout} |
-%%                                  {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling all non call/cast messages
-%%
-%% @spec handle_info(Info, State) -> {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_info(#'DOWN'{mref=MRef}, #state{session_mref=MRef,
-                                       call_waiters=Waiters,
-                                       calls=Calls}=State0) ->
-    %% The test died before it got a chance to clean up after itself.
-    %% Check whether there are any pending waiters.  If so, just print
-    %% the calls we've logged so far.  Hopefully that helps in
-    %% debugging.  This is probably the best we can accomplish -- being
-    %% able to fail the eunit test would be nice.  Another day perhaps.
-    possibly_print_call_waiters(Waiters, Calls),
-    State = i_end_session(State0),
-    {noreply, State};
-handle_info({trace, _, call, MFA}, State0) ->
-    State = register_call(MFA, State0),
-    {noreply, State};
-handle_info(Info, State) ->
-    io:format(user, "~p got message: ~p~n", [?MODULE, Info]),
-    {noreply, State}.
 
 possibly_print_call_waiters([], _Calls) ->
     ok;
@@ -670,15 +759,15 @@ calc_atom_resemblance(A1, A2) ->
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% This function is called by a gen_server when it is about to
+%% This function is called by a gen_fsm when it is about to
 %% terminate. It should be the opposite of Module:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_server terminates
-%% with Reason. The return value is ignored.
+%% necessary cleaning up. When it returns, the gen_fsm terminates with
+%% Reason. The return value is ignored.
 %%
-%% @spec terminate(Reason, State) -> void()
+%% @spec terminate(Reason, StateName, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, State) ->
+terminate(_Reason, _StateName, State) ->
     i_end_session(State), % ensure mock modules are unloaded when terminating
     ok.
 
@@ -687,18 +776,22 @@ terminate(_Reason, State) ->
 %% @doc
 %% Convert process state when code is changed
 %%
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
+%% @spec code_change(OldVsn, StateName, State, Extra) ->
+%%                   {ok, StateName, NewState}
 %% @end
 %%--------------------------------------------------------------------
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(_OldVsn, StateName, State, _Extra) ->
+    {ok, StateName, State}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-call(Msg) ->
-    gen_server:call(?SERVER, Msg, infinity).
+sync_send_event(Msg) ->
+    gen_fsm:sync_send_event(?SERVER, Msg, infinity).
+
+sync_send_all_state_event(Msg) ->
+    gen_fsm:sync_send_all_state_event(?SERVER, Msg, infinity).
 
 i_start_session(MockMFAs, WatchMFAs, Pid, State0) ->
     State = State0#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs},

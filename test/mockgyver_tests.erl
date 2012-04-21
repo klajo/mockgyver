@@ -330,3 +330,14 @@ forgets_registered_calls_test(_) ->
     ?FORGET_CALLS(mockgyver_dummy:return_arg(_, _)),
     ?WAS_CALLED(mockgyver_dummy:return_arg(_), never),
     ?WAS_CALLED(mockgyver_dummy:return_arg(_, _), never).
+
+returns_error_on_trying_to_mock_or_check_criteria_when_not_mocking_test() ->
+    %% Note: This function has intentionally no parameter, to make
+    %%       eunit pick it up and avoid starting the mocking
+    %%       framework.  Check that this returns a nice and
+    %%       understandable error message.
+    ?assertError(mocking_not_started,
+                 ?WHEN(mockgyver_dummy:return_arg(_) -> foo)),
+    ?assertError(mocking_not_started,
+                 ?WAS_CALLED(mockgyver_dummy:return_arg(_))),
+    ok.
