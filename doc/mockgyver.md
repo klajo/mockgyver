@@ -4,10 +4,8 @@
 * [Description](#description)
 
 
-   
+
 Mock functions and modules.
-
-
 
 Copyright (c) 2011, Klas Johansson
 
@@ -26,7 +24,7 @@ __Authors:__ Klas Johansson.<a name="description"></a>
 
 
 In order to use the various macros below, mocking must be
-initiated using the `?MOCK` macro or `?WITH_MOCKED_SETUP`   
+initiated using the `?MOCK` macro or `?WITH_MOCKED_SETUP`
 (recommended from eunit tests).
 
 
@@ -35,8 +33,8 @@ initiated using the `?MOCK` macro or `?WITH_MOCKED_SETUP`
 <pre>       ?MOCK(Expr)</pre>
 
 
-where `Expr` in a single expression, like a fun.  The rest of the   
-macros in this module can be used within this fun or in a function   
+where `Expr` in a single expression, like a fun.  The rest of the
+macros in this module can be used within this fun or in a function
 called by the fun.
 
 
@@ -50,7 +48,7 @@ called by the fun.
 
 This is an easy way of using mocks from within eunit tests and is
 mock-specific version of the `?WITH_SETUP` macro.  See the docs
-for the `?WITH_SETUP` macro in the `eunit_addons` project for more   
+for the `?WITH_SETUP` macro in the `eunit_addons` project for more
 information on parameters and settings.
 
 
@@ -62,8 +60,8 @@ information on parameters and settings.
 <h5><a name="Introduction">Introduction</a></h5>
 
 
-   
-By mocking a function, its original side-effects and return value   
+
+By mocking a function, its original side-effects and return value
 (or throw/exit/error) are overridden and replaced.  This can be used to:
 
 
@@ -82,15 +80,15 @@ BIFs (built-in functions) cannot be mocked.
 
 
 The original module will be renamed (a "^" will be appended to the
-original module name, i.e. `foo` will be renamed to `'foo^'`).   
-A mock can then call the original function just by performing a regular   
+original module name, i.e. `foo` will be renamed to `'foo^'`).
+A mock can then call the original function just by performing a regular
 function call.
 
 
 
 Since WHEN is a macro, and macros don't support argument lists
 (something like "Arg..."), multi-expression mocks must be
-surrounded by `begin ... end` to be treated as one argument by the   
+surrounded by `begin ... end` to be treated as one argument by the
 preprocessor.
 
 
@@ -116,23 +114,23 @@ expressions surrounded by `begin` and `end`.
 
 
 
-The only things of interest are the name of the module, the name   
-of the function and the arity.  The arguments of the function are   
-ignored and it can be a wise idea to set these to the "don't care"   
+The only things of interest are the name of the module, the name
+of the function and the arity.  The arguments of the function are
+ignored and it can be a wise idea to set these to the "don't care"
 variable: underscore.
 
 
 <h5><a name="Examples">Examples</a></h5>
 
 
-   
-Note: Apparently the Erlang/OTP team doesn't want us to redefine   
-PI to 4 anymore :-), since starting at R15B, math:pi/0 is marked as   
-pure which means that the compiler is allowed to replace the   
-math:pi() function call by a constant: 3.14...  This means that   
-even though mockgyver can mock the pi/0 function, a test case will   
-never call math:pi/0 since it will be inlined.  See commit   
-5adf009cb09295893e6bb01b4666a569590e0f19 (compiler: Turn calls to   
+
+Note: Apparently the Erlang/OTP team doesn't want us to redefine
+PI to 4 anymore :-), since starting at R15B, math:pi/0 is marked as
+pure which means that the compiler is allowed to replace the
+math:pi() function call by a constant: 3.14...  This means that
+even though mockgyver can mock the pi/0 function, a test case will
+never call math:pi/0 since it will be inlined.  See commit
+5adf009cb09295893e6bb01b4666a569590e0f19 (compiler: Turn calls to
 math:pi/0 into constant values) in the otp sources.
 
 Redefine pi to 4:
@@ -180,7 +178,7 @@ other module are left untouched:
 
 
 
-There are a number of ways to check that a certain function has   
+There are a number of ways to check that a certain function has
 been called and that works for both mocks and non-mocks.
 
 
@@ -218,7 +216,6 @@ forgotten, while the rest of the calls remain.
        ?WAS_CALLED(module:function(Arg1, Arg2, ...), Criteria),
            Criteria = once | never | {times, N} | {at_least, N} | {at_most, N}
            N = integer()
-  
            Result: [CallArgs]
                    CallArgs = [CallArg]
                    CallArg = term()</pre>
@@ -234,7 +231,6 @@ See syntax for `?WAS_CALLED`.
 <h5><a name="?GET_CALLS_syntax">?GET_CALLS syntax</a></h5>
 
 <pre>       ?GET_CALLS(module:function(Arg1, Arg2, ...)),
-  
            Result: [CallArgs]
                    CallArgs = [CallArg]
                    CallArg = term()</pre>
@@ -243,7 +239,6 @@ See syntax for `?WAS_CALLED`.
 <h5><a name="?NUM_CALLS_syntax">?NUM_CALLS syntax</a></h5>
 
 <pre>       ?NUM_CALLS(module:function(Arg1, Arg2, ...)),
-  
            Result: integer()</pre>
 
 <h5><a name="?FORGET_CALLS_syntax">?FORGET_CALLS syntax</a></h5>

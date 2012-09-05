@@ -89,6 +89,37 @@ The final test case could look something like this:
         ...trigger the ssh connection to close...
         ?WAS_CALLED(ssh:close(ssh_ref)),
 
+Caveats
+-------
+
+There are some pitfalls in using mockgyver that you
+might want to know about.
+
+* It's not possible to mock local functions.
+
+  This has to do with the way mockgyver works through
+  unloading and loading of modules.
+
+* Take care when mocking modules which are used by
+  other parts of the system.
+
+  Examples include those in stdlib and kernel. A common
+  pitfall is mocking io. Since mockgyver is
+  potentially unloading and reloading the original
+  module many times during a test suite, processes
+  which are running that module may get killed as part
+  of the code loading mechanism within Erlang. A common
+  situation when mocking io is that eunit will stop
+  printing the progress and you will wonder what has
+  happened.
+
+* NIFs cannot be mocked and mockgyver will try to
+  inform you if that is the case.
+
+* mockgyver does currently not play well with cover and
+  cover will complain that a module has not been cover
+  compiled. This is probably solvable.
+
 History
 -------
 
