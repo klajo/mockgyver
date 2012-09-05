@@ -669,7 +669,7 @@ fmt_waiter_calls(#call_waiter{mfa={WaitM,WaitF,WaitA0}, loc={File,Line}}=Waiter,
                    [fmt_candidate_mfas(CandMFAs, _Indent=8)])
        end,
        case CallMFAs of
-           [] -> f("    Unfortunately there are not registered calls~n", []);
+           [] -> f("    Unfortunately there are no registered calls~n", []);
            _  -> f("    Registered calls in order of decreasing similarity:~n"
                    "~s~n",
                    [fmt_calls(CallMFAs, _Indent=8)])
