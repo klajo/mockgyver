@@ -1,0 +1,5 @@
+:name "mockgyver"
+:lib-dirs '("deps" "test")
+:start-command "erl -sname mockgyver -pa test"
+
+
