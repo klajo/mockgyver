@@ -802,8 +802,7 @@ i_start_session(MockMFAs, WatchMFAs, Pid, State0) ->
     %% We mustn't trace non-mocked modules, since we'll register
     %% calls for those as part of reg_call_and_get_action.  If we
     %% did, we'd get double the amount of calls.
-    TraceMFAs = [{M,F,A} || {M,F,A} <- WatchMFAs,
-                            not lists:member(M, MockMods)],
+    TraceMFAs = get_trace_mfas(WatchMFAs, MockMods),
     case setup_trace_on_all_mfas(TraceMFAs) of
         ok ->
             MRef = erlang:monitor(process, Pid),
@@ -852,6 +851,9 @@ get_orig_tracer_info() ->
             {Tracer, Flags}
     end.
 
+get_trace_mfas(WatchMFAs, MockMods) ->
+    [{M,F,A} || {M,F,A} <- WatchMFAs, not lists:member(M, MockMods)].
+
 setup_trace_on_all_mfas(MFAs) ->
     lists:foldl(fun({M,_F,_A} = MFA, ok) ->
                         %% Ensure the module is loaded, otherwise
@@ -874,8 +876,15 @@ setup_trace_on_all_mfas(MFAs) ->
                 ok,
                 MFAs).
 
-i_end_session(#state{mock_mfas=MockMFAs, session_mref=MRef} = State) ->
-    unload_mods(get_unique_mods_by_mfas(MockMFAs)),
+remove_trace_on_all_mfas(MFAs) ->
+    [erlang:trace_pattern(MFA, false, [local]) || MFA <- MFAs].
+
+i_end_session(#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs,
+                     session_mref=MRef} = State) ->
+    MockMods = get_unique_mods_by_mfas(MockMFAs),
+    TraceMFAs = get_trace_mfas(WatchMFAs, MockMods),
+    remove_trace_on_all_mfas(TraceMFAs),
+    unload_mods(MockMods),
     erlang:trace(all, false, [call, {tracer, self()}]),
     if MRef =/= undefined -> erlang:demonitor(MRef, [flush]);
        true               -> ok
