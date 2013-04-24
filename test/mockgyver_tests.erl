@@ -341,3 +341,38 @@ returns_error_on_trying_to_mock_or_check_criteria_when_not_mocking_test() ->
     ?assertError(mocking_not_started,
                  ?WAS_CALLED(mockgyver_dummy:return_arg(_))),
     ok.
+
+%% Ensure that trace on lists:reverse has been enabled at least once
+%% so we can test that it has been removed in
+%% 'removes_trace_pattern_test'.
+activates_trace_on_lists_reverse_test(_) ->
+    [] = lists:reverse([]),
+    ?WAS_CALLED(lists:reverse(_)).
+
+%% Trace is removed after the mockgyver session has finished, so we
+%% cannot test it in a mockgyver test case (arity 1).
+removes_trace_pattern_test() ->
+    {flags, Flags} = erlang:trace_info(new, flags),
+    erlang:trace(all, false, Flags),
+    erlang:trace(all, true, [call, {tracer, self()}]),
+
+    Master = self(),
+    Ref = make_ref(),
+    %% spawn as trace is not activated on the tracing process
+    spawn(fun() ->
+		  lists:reverse([]),
+		  Master ! {Ref, done}
+	  end),
+    
+    receive {Ref, done} -> ok end,
+    TRef = erlang:trace_delivered(self()),
+    receive {trace_delivered, _, TRef} -> ok end,
+
+    ?assertEqual([], flush()).
+
+flush() ->
+    receive Msg ->
+	    [Msg | flush()]
+    after 0 ->
+	    []
+    end.
