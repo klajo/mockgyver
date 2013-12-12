@@ -62,4 +62,7 @@
 -define(FORGET_CALLS(Expr),
         ?VERIFY(Expr, forget_calls)).
 
+-define(FORGET_CALLS(),
+        mockgyver:forget_all_calls()).
+
 -endif.

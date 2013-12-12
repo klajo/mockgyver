@@ -200,11 +200,18 @@ asynchrounous procedures.
 
 * `?NUM_CALLS`: Return the number of calls to a function.
 
-* `?FORGET_CALLS`: Forget the calls that have been logged for a
-certain function.  Takes arguments and guards into account,
-i.e. only the calls which match the module name, function
-name and all arguments as well as any guards will be
-forgotten, while the rest of the calls remain.
+* `?FORGET_CALLS`: Forget the calls that have been logged.
+This exists in two versions:
+
+* One which forgets calls to a certain function.
+Takes arguments and guards into account, i.e. only
+the calls which match the module name, function
+name and all arguments as well as any guards will
+be forgotten, while the rest of the calls remain.
+
+* One which forgets all calls to any function.
+
+
 
 
 
@@ -243,7 +250,8 @@ See syntax for `?WAS_CALLED`.
 
 <h5><a name="?FORGET_CALLS_syntax">?FORGET_CALLS syntax</a></h5>
 
-<pre>       ?FORGET_CALLS(module:function(Arg1, Arg2, ...)),</pre>
+<pre>       ?FORGET_CALLS(module:function(Arg1, Arg2, ...)),
+       ?FORGET_CALLS(),</pre>
 
 <h5><a name="Examples">Examples</a></h5>
 
@@ -291,6 +299,17 @@ Forget calls to functions:
        ?WAS_CALLED(lists:nth(2, [d, e, f]), never),
        ?WAS_CALLED(lists:nth(3, [g, h, i]), once),
        ?FORGET_CALLS(lists:nth(_, _)),
+       ?WAS_CALLED(lists:nth(1, [a, b, c]), never),
+       ?WAS_CALLED(lists:nth(2, [d, e, f]), never),
+       ?WAS_CALLED(lists:nth(3, [g, h, i]), never),</pre>
+Forget calls to all functions:
+<pre>       a = lists:nth(1, [a, b, c]),
+       e = lists:nth(2, [d, e, f]),
+       i = lists:nth(3, [g, h, i]),
+       ?WAS_CALLED(lists:nth(1, [a, b, c]), once),
+       ?WAS_CALLED(lists:nth(2, [d, e, f]), once),
+       ?WAS_CALLED(lists:nth(3, [g, h, i]), once),
+       ?FORGET_CALLS(),
        ?WAS_CALLED(lists:nth(1, [a, b, c]), never),
        ?WAS_CALLED(lists:nth(2, [d, e, f]), never),
        ?WAS_CALLED(lists:nth(3, [g, h, i]), never),</pre>

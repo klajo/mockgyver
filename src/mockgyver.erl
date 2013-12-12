@@ -193,11 +193,17 @@
 %%%   <li>`?GET_CALLS': Return a list of argument lists (just like
 %%%       `?WAS_CALLED' or `?WAIT_CALLED') without checking any criteria.</li>
 %%%   <li>`?NUM_CALLS': Return the number of calls to a function.</li>
-%%%   <li>`?FORGET_CALLS': Forget the calls that have been logged for a
-%%%        certain function.  Takes arguments and guards into account,
-%%%        i.e. only the calls which match the module name, function
-%%%        name and all arguments as well as any guards will be
-%%%        forgotten, while the rest of the calls remain.</li>
+%%%   <li>`?FORGET_CALLS': Forget the calls that have been logged.
+%%%        This exists in two versions:
+%%%        <ul>
+%%%          <li>One which forgets calls to a certain function.
+%%%              Takes arguments and guards into account, i.e. only
+%%%              the calls which match the module name, function
+%%%              name and all arguments as well as any guards will
+%%%              be forgotten, while the rest of the calls remain.</li>
+%%%          <li>One which forgets all calls to any function.</li>
+%%%        </ul>
+%%%   </li>
 %%% </ul>
 %%%
 %%% ==== ?WAS_CALLED syntax ====
@@ -235,6 +241,7 @@
 %%% ==== ?FORGET_CALLS syntax ====
 %%% ```
 %%%     ?FORGET_CALLS(module:function(Arg1, Arg2, ...)),
+%%%     ?FORGET_CALLS(),
 %%% '''
 %%% ==== Examples ====
 %%% Check that a function has been called once (the two alternatives
@@ -308,6 +315,19 @@
 %%%     ?WAS_CALLED(lists:nth(2, [d, e, f]), never),
 %%%     ?WAS_CALLED(lists:nth(3, [g, h, i]), never),
 %%% '''
+%%% Forget calls to all functions:
+%%% ```
+%%%     a = lists:nth(1, [a, b, c]),
+%%%     e = lists:nth(2, [d, e, f]),
+%%%     i = lists:nth(3, [g, h, i]),
+%%%     ?WAS_CALLED(lists:nth(1, [a, b, c]), once),
+%%%     ?WAS_CALLED(lists:nth(2, [d, e, f]), once),
+%%%     ?WAS_CALLED(lists:nth(3, [g, h, i]), once),
+%%%     ?FORGET_CALLS(),
+%%%     ?WAS_CALLED(lists:nth(1, [a, b, c]), never),
+%%%     ?WAS_CALLED(lists:nth(2, [d, e, f]), never),
+%%%     ?WAS_CALLED(lists:nth(3, [g, h, i]), never),
+%%% '''
 %%% @end
 %%%-------------------------------------------------------------------
 -module(mockgyver).
@@ -326,6 +346,7 @@
 
 -export([reg_call_and_get_action/1, get_action/1, set_action/1, set_action/2]).
 -export([verify/2, verify/3]).
+-export([forget_all_calls/0]).
 
 %% For test
 -export([check_criteria/2]).
@@ -413,6 +434,10 @@ verify({M, F, A}, Criteria, Opts) ->
     wait_until_trace_delivered(),
     chk(sync_send_event({verify, {M, F, A}, Criteria, Opts})).
 
+%% @private
+forget_all_calls() ->
+    chk(sync_send_event(forget_all_calls)).
+
 %%%===================================================================
 %%% gen_fsm callbacks
 %%%===================================================================
@@ -475,6 +500,8 @@ no_session({start_session, MockMFAs, WatchMFAs, Pid}, _From, State0) ->
 no_session({set_action, _MFA, _Opts}, _From, State) ->
     {reply, {error, mocking_not_started}, no_session, State};
 no_session({verify, _MFA, _Operation, _Opts}, _From, State) ->
+    {reply, {error, mocking_not_started}, no_session, State};
+no_session(forget_all_calls, _From, State) ->
     {reply, {error, mocking_not_started}, no_session, State}.
 
 %%--------------------------------------------------------------------
@@ -564,7 +591,9 @@ session({verify, MFA, forget_when, _Opts}, _From, State0) ->
     {reply, ok, session, State};
 session({verify, MFA, forget_calls, _Opts}, _From, State0) ->
     State = remove_matching_calls(MFA, State0),
-    {reply, ok, session, State}.
+    {reply, ok, session, State};
+session(forget_all_calls, _From, State) ->
+    {reply, ok, session, State#state{calls=[]}}.
 
 %%--------------------------------------------------------------------
 %% @private

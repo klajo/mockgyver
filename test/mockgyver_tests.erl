@@ -331,6 +331,17 @@ forgets_registered_calls_test(_) ->
     ?WAS_CALLED(mockgyver_dummy:return_arg(_), never),
     ?WAS_CALLED(mockgyver_dummy:return_arg(_, _), never).
 
+forgets_all_calls_test(_) ->
+    1      = mockgyver_dummy:return_arg(1),
+    2      = mockgyver_dummy:return_arg(2),
+    3      = mockgyver_dummy:return_arg(3),
+    {1, 2} = mockgyver_dummy:return_arg(1, 2),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_), {times, 3}),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_, _), once),
+    ?FORGET_CALLS(),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_), never),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(_, _), never).
+
 returns_error_on_trying_to_mock_or_check_criteria_when_not_mocking_test() ->
     %% Note: This function has intentionally no parameter, to make
     %%       eunit pick it up and avoid starting the mocking
