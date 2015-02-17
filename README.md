@@ -101,6 +101,13 @@ The final test case could look something like this:
         ?WAS_CALLED(ssh:close(ssh_ref)),
 ```
 
+API documentation
+-----------------
+
+See [`mockgyver`](http://github.com/klajo/mockgyver/blob/master/doc/mockgyver.md)
+for details.
+
+
 Caveats
 -------
 
