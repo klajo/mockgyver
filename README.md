@@ -32,19 +32,25 @@ without having to start an ssh server.  Then we can use
 the ?WHEN macro to replace the original ssh module and
 let connect/3 return a bogus ssh\_connection\_ref():
 
+```erlang
     ?WHEN(ssh:connect(_Host, _Port, _Opts) -> {ok, ssh_ref}),
+```
 
 Also, let's mock close/1 while we're at it to make sure
 it won't crash on the bogus ssh\_ref:
 
+```erlang
     ?WHEN(ssh:close(_ConnRef) -> ok),
+```
 
 When testing our program, we want to make sure it calls
 the ssh module with the correct arguments so we'll add
 these lines:
 
+```erlang
     ?WAS_CALLED(ssh:connect({127,0,0,1}, 2022, [])),
     ?WAS_CALLED(ssh:close(ssh_ref)),
+```
 
 For all of this to work, the test needs to be
 encapsulated within either the ?MOCK macro or the
@@ -52,16 +58,20 @@ encapsulated within either the ?MOCK macro or the
 test case above is within a function called
 sets\_up\_and\_tears\_down\_ssh\_connection:
 
+```erlang
     sets_up_and_tears_down_ssh_connection_test() ->
         ?MOCK(fun sets_up_and_tears_down_ssh_connection/0).
+```
 
 Or, if you prefer ?WITH\_MOCKED\_SETUP:
 
+```erlang
     ssh_test_() ->
         ?WITH_MOCKED_SETUP(fun setup/0, fun cleanup/1).
 
     sets_up_and_tears_down_ssh_connection_test(_) ->
         ...
+```
 
 Sometimes a test requires a process to be started
 before a test, and stopped after a test.  In that case,
@@ -70,6 +80,7 @@ call all ...test/1 functions).
 
 The final test case could look something like this:
 
+```erlang
     -include_lib("mockgyver/include/mockgyver.hrl").
 
     ssh_test_() ->
@@ -88,6 +99,7 @@ The final test case could look something like this:
         ?WAS_CALLED(ssh:connect({127,0,0,1}, 2022, [])),
         ...trigger the ssh connection to close...
         ?WAS_CALLED(ssh:close(ssh_ref)),
+```
 
 Caveats
 -------
@@ -127,6 +139,7 @@ It all started when a friend of mine (Tomas
 Abrahamsson) and I (Klas Johansson) wrote a tool we
 called the stubber.  Using it looked something like this:
 
+```erlang
     stubber:run_with_replaced_modules(
         [{math, pi, fun() -> 4 end},
          {some_module, some_function, fun(X, Y) -> ... end},
@@ -134,6 +147,7 @@ called the stubber.  Using it looked something like this:
         fun() ->
             code which should be run with replacements above
         end),
+```
 
 Time went by and we had test cases which needed a more
 intricate behaviour, the stubs grew more and more

@@ -31,7 +31,7 @@ initiated using the `?MOCK` macro or `?WITH_MOCKED_SETUP`
 <h5><a name="?MOCK_syntax">?MOCK syntax</a></h5>
 
 
-```
+```erlang
        ?MOCK(Expr)
 ```
 
@@ -45,7 +45,8 @@ called by the fun.
 <h5><a name="?WITH_MOCKED_SETUP_syntax">?WITH_MOCKED_SETUP syntax</a></h5>
 
 
-```
+```erlang
+
        ?WITH_MOCKED_SETUP(SetupFun, CleanupFun),
        ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout),
        ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
@@ -109,7 +110,8 @@ i.e. returned to the behaviour of the original module, using the
 <h5><a name="?WHEN_syntax">?WHEN syntax</a></h5>
 
 
-```
+```erlang
+
        ?WHEN(module:function(Arg1, Arg2, ...) -> Expr),
 ```
 
@@ -123,7 +125,8 @@ expressions surrounded by `begin` and `end`.
 <h5><a name="?FORGET_WHEN_syntax">?FORGET_WHEN syntax</a></h5>
 
 
-```
+```erlang
+
        ?FORGET_WHEN(module:function(_, _, ...)),
 ```
 
@@ -151,33 +154,38 @@ math:pi/0 into constant values) in the otp sources.
 
 Redefine pi to 4:
 
-```
+```erlang
+
        ?WHEN(math:pi() -> 4),
 ```
 
 Implement a mock with multiple clauses:
 
-```
+```erlang
+
        ?WHEN(my_module:classify_number(N) when N >= 0 -> positive;
              my_module:classify_number(_N)            -> negative),
 ```
 
 Call original module:
 
-```
+```erlang
+
        ?WHEN(math:pi() -> 'math^':pi() * 2),
 ```
 
 Use a variable bound outside the mock:
 
-```
+```erlang
+
        Answer = 42,
        ?WHEN(math:pi() -> Answer),
 ```
 
 Redefine the mock:
 
-```
+```erlang
+
        ?WHEN(math:pi() -> 4),
        4 = math:pi(),
        ?WHEN(math:pi() -> 5),
@@ -186,20 +194,23 @@ Redefine the mock:
 
 Let the mock exit with an error:
 
-```
+```erlang
+
        ?WHEN(math:pi() -> erlang:error(some_error)),
 ```
 
 Make a new module:
 
-```
+```erlang
+
        ?WHEN(my_math:pi() -> 4),
        ?WHEN(my_math:e() -> 3),
 ```
 
 Put multiple clauses in a function's body:
 
-```
+```erlang
+
        ?WHEN(math:pi() ->
                  begin
                      do_something1(),
@@ -211,7 +222,7 @@ Revert the pi function to its default behaviour (return value from
 the original module), any other mocks in the same module, or any
 other module are left untouched:
 
-```
+```erlang
        ?WHEN(math:pi() -> 4),
        4 = math:pi(),
        ?FORGET_WHEN(math:pi()),
@@ -271,7 +282,7 @@ be forgotten, while the rest of the calls remain.
 <h5><a name="?WAS_CALLED_syntax">?WAS_CALLED syntax</a></h5>
 
 
-```
+```erlang
        ?WAS_CALLED(module:function(Arg1, Arg2, ...)),
            equivalent to ?WAS_CALLED(module:function(Arg1, Arg2, ...), once)
        ?WAS_CALLED(module:function(Arg1, Arg2, ...), Criteria),
@@ -294,7 +305,7 @@ See syntax for `?WAS_CALLED`.
 <h5><a name="?GET_CALLS_syntax">?GET_CALLS syntax</a></h5>
 
 
-```
+```erlang
        ?GET_CALLS(module:function(Arg1, Arg2, ...)),
            Result: [CallArgs]
                    CallArgs = [CallArg]
@@ -306,7 +317,8 @@ See syntax for `?WAS_CALLED`.
 <h5><a name="?NUM_CALLS_syntax">?NUM_CALLS syntax</a></h5>
 
 
-```
+```erlang
+
        ?NUM_CALLS(module:function(Arg1, Arg2, ...)),
            Result: integer()
 ```
@@ -315,7 +327,8 @@ See syntax for `?WAS_CALLED`.
 <h5><a name="?FORGET_CALLS_syntax">?FORGET_CALLS syntax</a></h5>
 
 
-```
+```erlang
+
        ?FORGET_CALLS(module:function(Arg1, Arg2, ...)),
        ?FORGET_CALLS(),
 ```
@@ -326,58 +339,67 @@ See syntax for `?WAS_CALLED`.
 Check that a function has been called once (the two alternatives
 are equivalent):
 
-```
+```erlang
+
        ?WAS_CALLED(math:pi()),
        ?WAS_CALLED(math:pi(), once),
 ```
 
 Check that a function has never been called:
 
-```
+```erlang
+
        ?WAS_CALLED(math:pi(), never),
 ```
 
 Check that a function has been called twice:
 
-```
+```erlang
+
        ?WAS_CALLED(math:pi(), {times, 2}),
 ```
 
 Check that a function has been called at least twice:
 
-```
+```erlang
+
        ?WAS_CALLED(math:pi(), {at_least, 2}),
 ```
 
 Check that a function has been called at most twice:
 
-```
+```erlang
+
        ?WAS_CALLED(math:pi(), {at_most, 2}),
 ```
 
 Use pattern matching to check that a function was called with
 certain arguments:
 
-```
+```erlang
+
        ?WAS_CALLED(lists:reverse([a, b, c])),
 ```
 
 Pattern matching can even use bound variables:
 
-```
+```erlang
+
        L = [a, b, c],
        ?WAS_CALLED(lists:reverse(L)),
 ```
 
 Use a guard to validate the parameters in a call:
 
-```
+```erlang
+
        ?WAS_CALLED(lists:reverse(L) when is_list(L)),
 ```
 
 Retrieve the arguments in a call while verifying the number of calls:
 
-```
+```erlang
+
        a = lists:nth(1, [a, b]),
        d = lists:nth(2, [c, d]),
        [[1, [a, b]], [2, [c, d]]] = ?WAS_CALLED(lists:nth(_, _), {times, 2}),
@@ -385,7 +407,8 @@ Retrieve the arguments in a call while verifying the number of calls:
 
 Retrieve the arguments in a call without verifying the number of calls:
 
-```
+```erlang
+
        a = lists:nth(1, [a, b]),
        d = lists:nth(2, [c, d]),
        [[1, [a, b]], [2, [c, d]]] = ?GET_CALLS(lists:nth(_, _)),
@@ -393,7 +416,8 @@ Retrieve the arguments in a call without verifying the number of calls:
 
 Retrieve the number of calls:
 
-```
+```erlang
+
        a = lists:nth(1, [a, b]),
        d = lists:nth(2, [c, d]),
        2 = ?NUM_CALLS(lists:nth(_, _)),
@@ -401,7 +425,8 @@ Retrieve the number of calls:
 
 Forget calls to functions:
 
-```
+```erlang
+
        a = lists:nth(1, [a, b, c]),
        e = lists:nth(2, [d, e, f]),
        i = lists:nth(3, [g, h, i]),
@@ -420,7 +445,8 @@ Forget calls to functions:
 
 Forget calls to all functions:
 
-```
+```erlang
+
        a = lists:nth(1, [a, b, c]),
        e = lists:nth(2, [d, e, f]),
        i = lists:nth(3, [g, h, i]),

@@ -44,20 +44,20 @@
 %%% (recommended from eunit tests).
 %%%
 %%% ==== ?MOCK syntax ====
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?MOCK(Expr)
-%%% '''
+%%% </pre>
 %%% where `Expr' in a single expression, like a fun.  The rest of the
 %%% macros in this module can be used within this fun or in a function
 %%% called by the fun.
 %%%
 %%% ==== ?WITH_MOCKED_SETUP syntax ====
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WITH_MOCKED_SETUP(SetupFun, CleanupFun),
 %%%     ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout),
 %%%     ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
 %%%                        Tests),
-%%% '''
+%%% </pre>
 %%% This is an easy way of using mocks from within eunit tests and is
 %%% mock-specific version of the `?WITH_SETUP' macro.  See the docs
 %%% for the `?WITH_SETUP' macro in the `eunit_addons' project for more
@@ -92,17 +92,17 @@
 %%% `?FORGET_WHEN' macro.
 %%%
 %%% ==== ?WHEN syntax ====
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WHEN(module:function(Arg1, Arg2, ...) -> Expr),
-%%% '''
+%%% </pre>
 %%%
 %%% where `Expr' is a single expression (like a term) or a series of
 %%% expressions surrounded by `begin' and `end'.
 %%%
 %%% ==== ?FORGET_WHEN syntax ====
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?FORGET_WHEN(module:function(_, _, ...)),
-%%% '''
+%%% </pre>
 %%%
 %%% The only things of interest are the name of the module, the name
 %%% of the function and the arity.  The arguments of the function are
@@ -120,56 +120,56 @@
 %%% math:pi/0 into constant values) in the otp sources.
 %%%
 %%% Redefine pi to 4:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WHEN(math:pi() -> 4),
-%%% '''
+%%% </pre>
 %%% Implement a mock with multiple clauses:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WHEN(my_module:classify_number(N) when N >= 0 -> positive;
 %%%           my_module:classify_number(_N)            -> negative),
-%%% '''
+%%% </pre>
 %%% Call original module:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WHEN(math:pi() -> 'math^':pi() * 2),
-%%% '''
+%%% </pre>
 %%% Use a variable bound outside the mock:
-%%% ```
+%%% <pre lang="erlang">
 %%%     Answer = 42,
 %%%     ?WHEN(math:pi() -> Answer),
-%%% '''
+%%% </pre>
 %%% Redefine the mock:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WHEN(math:pi() -> 4),
 %%%     4 = math:pi(),
 %%%     ?WHEN(math:pi() -> 5),
 %%%     5 = math:pi(),
-%%% '''
+%%% </pre>
 %%% Let the mock exit with an error:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WHEN(math:pi() -> erlang:error(some_error)),
-%%% '''
+%%% </pre>
 %%% Make a new module:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WHEN(my_math:pi() -> 4),
 %%%     ?WHEN(my_math:e() -> 3),
-%%% '''
+%%% </pre>
 %%% Put multiple clauses in a function's body:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WHEN(math:pi() ->
 %%%               begin
 %%%                   do_something1(),
 %%%                   do_something2()
 %%%               end),
-%%% '''
+%%% </pre>
 %%% Revert the pi function to its default behaviour (return value from
 %%% the original module), any other mocks in the same module, or any
 %%% other module are left untouched:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WHEN(math:pi() -> 4),
 %%%     4 = math:pi(),
 %%%     ?FORGET_WHEN(math:pi()),
 %%%     3.1415... = math:pi(),
-%%% '''
+%%% </pre>
 %%%
 %%% === Validating calls ===
 %%%
@@ -207,7 +207,7 @@
 %%% </ul>
 %%%
 %%% ==== ?WAS_CALLED syntax ====
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WAS_CALLED(module:function(Arg1, Arg2, ...)),
 %%%         equivalent to ?WAS_CALLED(module:function(Arg1, Arg2, ...), once)
 %%%     ?WAS_CALLED(module:function(Arg1, Arg2, ...), Criteria),
@@ -218,88 +218,88 @@
 %%%                 CallArgs = [CallArg]
 %%%                 CallArg = term()
 %%%
-%%% '''
+%%% </pre>
 %%% ==== ?WAIT_CALLED syntax ====
 %%%
 %%% See syntax for `?WAS_CALLED'.
 %%%
 %%% ==== ?GET_CALLS syntax ====
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?GET_CALLS(module:function(Arg1, Arg2, ...)),
 %%%
 %%%         Result: [CallArgs]
 %%%                 CallArgs = [CallArg]
 %%%                 CallArg = term()
-%%% '''
+%%% </pre>
 %%%
 %%% ==== ?NUM_CALLS syntax ====
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?NUM_CALLS(module:function(Arg1, Arg2, ...)),
 %%%
 %%%         Result: integer()
-%%% '''
+%%% </pre>
 %%% ==== ?FORGET_CALLS syntax ====
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?FORGET_CALLS(module:function(Arg1, Arg2, ...)),
 %%%     ?FORGET_CALLS(),
-%%% '''
+%%% </pre>
 %%% ==== Examples ====
 %%% Check that a function has been called once (the two alternatives
 %%% are equivalent):
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WAS_CALLED(math:pi()),
 %%%     ?WAS_CALLED(math:pi(), once),
-%%% '''
+%%% </pre>
 %%% Check that a function has never been called:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WAS_CALLED(math:pi(), never),
-%%% '''
+%%% </pre>
 %%% Check that a function has been called twice:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WAS_CALLED(math:pi(), {times, 2}),
-%%% '''
+%%% </pre>
 %%% Check that a function has been called at least twice:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WAS_CALLED(math:pi(), {at_least, 2}),
-%%% '''
+%%% </pre>
 %%% Check that a function has been called at most twice:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WAS_CALLED(math:pi(), {at_most, 2}),
-%%% '''
+%%% </pre>
 %%% Use pattern matching to check that a function was called with
 %%% certain arguments:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WAS_CALLED(lists:reverse([a, b, c])),
-%%% '''
+%%% </pre>
 %%% Pattern matching can even use bound variables:
-%%% ```
+%%% <pre lang="erlang">
 %%%     L = [a, b, c],
 %%%     ?WAS_CALLED(lists:reverse(L)),
-%%% '''
+%%% </pre>
 %%% Use a guard to validate the parameters in a call:
-%%% ```
+%%% <pre lang="erlang">
 %%%     ?WAS_CALLED(lists:reverse(L) when is_list(L)),
-%%% '''
+%%% </pre>
 %%% Retrieve the arguments in a call while verifying the number of calls:
-%%% ```
+%%% <pre lang="erlang">
 %%%     a = lists:nth(1, [a, b]),
 %%%     d = lists:nth(2, [c, d]),
 %%%     [[1, [a, b]], [2, [c, d]]] = ?WAS_CALLED(lists:nth(_, _), {times, 2}),
-%%% '''
+%%% </pre>
 %%% Retrieve the arguments in a call without verifying the number of calls:
-%%% ```
+%%% <pre lang="erlang">
 %%%     a = lists:nth(1, [a, b]),
 %%%     d = lists:nth(2, [c, d]),
 %%%     [[1, [a, b]], [2, [c, d]]] = ?GET_CALLS(lists:nth(_, _)),
-%%% '''
+%%% </pre>
 %%% Retrieve the number of calls:
-%%% ```
+%%% <pre lang="erlang">
 %%%     a = lists:nth(1, [a, b]),
 %%%     d = lists:nth(2, [c, d]),
 %%%     2 = ?NUM_CALLS(lists:nth(_, _)),
-%%% '''
+%%% </pre>
 %%% Forget calls to functions:
-%%% ```
+%%% <pre lang="erlang">
 %%%     a = lists:nth(1, [a, b, c]),
 %%%     e = lists:nth(2, [d, e, f]),
 %%%     i = lists:nth(3, [g, h, i]),
@@ -314,9 +314,9 @@
 %%%     ?WAS_CALLED(lists:nth(1, [a, b, c]), never),
 %%%     ?WAS_CALLED(lists:nth(2, [d, e, f]), never),
 %%%     ?WAS_CALLED(lists:nth(3, [g, h, i]), never),
-%%% '''
+%%% </pre>
 %%% Forget calls to all functions:
-%%% ```
+%%% <pre lang="erlang">
 %%%     a = lists:nth(1, [a, b, c]),
 %%%     e = lists:nth(2, [d, e, f]),
 %%%     i = lists:nth(3, [g, h, i]),
@@ -327,7 +327,7 @@
 %%%     ?WAS_CALLED(lists:nth(1, [a, b, c]), never),
 %%%     ?WAS_CALLED(lists:nth(2, [d, e, f]), never),
 %%%     ?WAS_CALLED(lists:nth(3, [g, h, i]), never),
-%%% '''
+%%% </pre>
 %%% @end
 %%%-------------------------------------------------------------------
 -module(mockgyver).
