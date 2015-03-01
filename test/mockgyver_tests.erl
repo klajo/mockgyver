@@ -51,7 +51,10 @@ setup() ->
 cleanup(_) ->
     ok.
 
-only_allows_one_mock_at_a_time_test() ->
+only_allows_one_mock_at_a_time_test_() ->
+    {timeout, ?PER_TC_TIMEOUT, fun only_allows_one_mock_at_a_time_test_aux/0}.
+
+only_allows_one_mock_at_a_time_test_aux() ->
     NumMockers = 10,
     Parent = self(),
     Mocker = fun() ->
@@ -362,7 +365,10 @@ activates_trace_on_lists_reverse_test(_) ->
 
 %% Trace is removed after the mockgyver session has finished, so we
 %% cannot test it in a mockgyver test case (arity 1).
-removes_trace_pattern_test() ->
+removes_trace_pattern_test_() ->
+    {timeout, ?PER_TC_TIMEOUT, fun removes_trace_pattern_test_aux/0}.
+
+removes_trace_pattern_test_aux() ->
     {flags, Flags} = erlang:trace_info(new, flags),
     erlang:trace(all, false, Flags),
     erlang:trace(all, true, [call, {tracer, self()}]),
