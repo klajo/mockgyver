@@ -3,44 +3,36 @@
 # Module mockgyver #
 * [Description](#description)
 
-
-
 Mock functions and modules.
+
 Copyright (c) 2011, Klas Johansson
 
 __Behaviours:__ [`gen_fsm`](gen_fsm.md).
 
 __Authors:__ Klas Johansson.
+
 <a name="description"></a>
 
 ## Description ##
 
 
-
-
 #### <a name="Initiating_mock">Initiating mock</a> ####
-
-
 
 In order to use the various macros below, mocking must be
 initiated using the `?MOCK` macro or `?WITH_MOCKED_SETUP`
 (recommended from eunit tests).
 
-
-
 <h5><a name="?MOCK_syntax">?MOCK syntax</a></h5>
 
 
 ```erlang
+
        ?MOCK(Expr)
 ```
-
 
 where `Expr` in a single expression, like a fun.  The rest of the
 macros in this module can be used within this fun or in a function
 called by the fun.
-
-
 
 <h5><a name="?WITH_MOCKED_SETUP_syntax">?WITH_MOCKED_SETUP syntax</a></h5>
 
@@ -53,26 +45,18 @@ called by the fun.
                           Tests),
 ```
 
-
 This is an easy way of using mocks from within eunit tests and is
 mock-specific version of the `?WITH_SETUP` macro.  See the docs
 for the `?WITH_SETUP` macro in the `eunit_addons` project for more
 information on parameters and settings.
 
 
-
-
 #### <a name="Mocking_a_function">Mocking a function</a> ####
-
-
 
 <h5><a name="Introduction">Introduction</a></h5>
 
-
 By mocking a function, its original side-effects and return value
 (or throw/exit/error) are overridden and replaced.  This can be used to:
-
-
 
 * replace existing functions in existing modules
 
@@ -81,31 +65,21 @@ By mocking a function, its original side-effects and return value
 * add new modules
 
 
-
-
 BIFs (built-in functions) cannot be mocked.
-
-
 
 The original module will be renamed (a "^" will be appended to the
 original module name, i.e. `foo` will be renamed to `'foo^'`).
 A mock can then call the original function just by performing a regular
 function call.
 
-
-
 Since WHEN is a macro, and macros don't support argument lists
 (something like "Arg..."), multi-expression mocks must be
 surrounded by `begin ... end` to be treated as one argument by the
 preprocessor.
 
-
-
 A mock that was introduced using the ?WHEN macro can be forgotten,
 i.e. returned to the behaviour of the original module, using the
 `?FORGET_WHEN` macro.
-
-
 
 <h5><a name="?WHEN_syntax">?WHEN syntax</a></h5>
 
@@ -115,12 +89,8 @@ i.e. returned to the behaviour of the original module, using the
        ?WHEN(module:function(Arg1, Arg2, ...) -> Expr),
 ```
 
-
-
 where `Expr` is a single expression (like a term) or a series of
 expressions surrounded by `begin` and `end`.
-
-
 
 <h5><a name="?FORGET_WHEN_syntax">?FORGET_WHEN syntax</a></h5>
 
@@ -130,17 +100,12 @@ expressions surrounded by `begin` and `end`.
        ?FORGET_WHEN(module:function(_, _, ...)),
 ```
 
-
-
 The only things of interest are the name of the module, the name
 of the function and the arity.  The arguments of the function are
 ignored and it can be a wise idea to set these to the "don't care"
 variable: underscore.
 
-
-
 <h5><a name="Examples">Examples</a></h5>
-
 
 Note: Apparently the Erlang/OTP team doesn't want us to redefine
 PI to 4 anymore :-), since starting at R15B, math:pi/0 is marked as
@@ -150,7 +115,6 @@ even though mockgyver can mock the pi/0 function, a test case will
 never call math:pi/0 since it will be inlined.  See commit
 5adf009cb09295893e6bb01b4666a569590e0f19 (compiler: Turn calls to
 math:pi/0 into constant values) in the otp sources.
-
 
 Redefine pi to 4:
 
@@ -223,6 +187,7 @@ the original module), any other mocks in the same module, or any
 other module are left untouched:
 
 ```erlang
+
        ?WHEN(math:pi() -> 4),
        4 = math:pi(),
        ?FORGET_WHEN(math:pi()),
@@ -230,20 +195,12 @@ other module are left untouched:
 ```
 
 
-
-
 #### <a name="Validating_calls">Validating calls</a> ####
-
-
 
 <h5><a name="Introduction">Introduction</a></h5>
 
-
-
 There are a number of ways to check that a certain function has
 been called and that works for both mocks and non-mocks.
-
-
 
 * `?WAS_CALLED`: Check that a function was called with
 certain set of parameters a chosen number of times.
@@ -277,12 +234,11 @@ be forgotten, while the rest of the calls remain.
 
 
 
-
-
 <h5><a name="?WAS_CALLED_syntax">?WAS_CALLED syntax</a></h5>
 
 
 ```erlang
+
        ?WAS_CALLED(module:function(Arg1, Arg2, ...)),
            equivalent to ?WAS_CALLED(module:function(Arg1, Arg2, ...), once)
        ?WAS_CALLED(module:function(Arg1, Arg2, ...), Criteria),
@@ -296,23 +252,18 @@ be forgotten, while the rest of the calls remain.
 
 <h5><a name="?WAIT_CALLED_syntax">?WAIT_CALLED syntax</a></h5>
 
-
-
 See syntax for `?WAS_CALLED`.
-
-
 
 <h5><a name="?GET_CALLS_syntax">?GET_CALLS syntax</a></h5>
 
 
 ```erlang
+
        ?GET_CALLS(module:function(Arg1, Arg2, ...)),
            Result: [CallArgs]
                    CallArgs = [CallArg]
                    CallArg = term()
 ```
-
-
 
 <h5><a name="?NUM_CALLS_syntax">?NUM_CALLS syntax</a></h5>
 
