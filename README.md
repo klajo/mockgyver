@@ -1,6 +1,8 @@
 mockgyver
 =========
 
+[![Hex pm](https://img.shields.io/hexpm/v/mockgyver.svg?style=flat)](https://hex.pm/packages/mockgyver)
+
 mockgyver is an Erlang tool which will make it easier
 to write EUnit tests which need to replace or alter
 (stub/mock) the behaviour of other modules.
@@ -17,7 +19,7 @@ with a chosen set of arguments.
 Read more about constructs and syntax in the
 documentation for the mockgyver module.
 
-The documentation is generated using the [edown][3]
+The documentation is generated using the [edown][4]
 extension which generates documentation which is
 immediately readable on github.  Remove the edown lines
 from `rebar.config` to generate regular edoc.
@@ -162,21 +164,47 @@ complicated and that's when I thought: it must be
 possible to come up with something better and that's
 when I wrote mockgyver.
 
+Using mockgyver with your own application
+-----------------------------------------
+
+mockgyver is available as a [hex package][1].  Just add it as a
+dependency to your rebar.config:
+
+```sh
+{deps, [mockgyver]}.
+```
+
+... or with a specific version:
+
+```sh
+{deps, [{mockgyver, "some.good.version"}]}.
+```
+
 Building
 --------
 
-Build mockgyver using [rebar][1].  Also,
-[parse\_trans][2] (for the special syntax), [edown][3]
-(for docs) and [eunit\_addons][4] (for ?WITH\_MOCKED\_SETUP)
+Build mockgyver using [rebar][2].  Also,
+[parse\_trans][3] (for the special syntax), [edown][4]
+(for docs on github) and [eunit\_addons][5] (for ?WITH\_MOCKED\_SETUP)
 are required, but rebar takes care of that.
 
 ```sh
 $ git clone git://github.com/klajo/mockgyver.git
-$ rebar get-deps
-$ rebar compile
+$ rebar3 compile
 ```
 
-[1]: https://github.com/basho/rebar
-[2]: https://github.com/esl/parse_trans
-[3]: https://github.com/esl/edown
-[4]: https://github.com/klajo/eunit_addons
+Build docs using the edown library (for markdown format):
+```sh
+$ rebar3 as edown edoc
+```
+
+Build regular docs:
+```sh
+$ rebar3 edoc
+```
+
+[1]: https://hex.pm/packages/mockgyver
+[2]: https://www.rebar3.org
+[3]: https://hex.pm/packages/parse_trans
+[4]: https://hex.pm/packages/edown
+[5]: https://hex.pm/packages/eunit_addons

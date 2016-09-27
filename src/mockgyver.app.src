@@ -2,8 +2,12 @@
 {application,
  mockgyver,
  [{description,"Mocking library"},
-  {vsn,"0.1"},
+  {vsn,"0.12.0"},
   {registered,[]},
   {mod, {mockgyver_app, []}},
   {applications,[kernel, stdlib]},
-  {env,[]}]}.
+  {env,[]},
+  {licenses, ["BSD"]},
+  {maintainers, ["Klas Johansson"]},
+  {links, [{"Github", "https://github.com/klajo/mockgyver"}]}]}.
+  
