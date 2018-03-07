@@ -3,3 +3,4 @@
 deps
 ebin
 .eunit
+/test/mockgyver_dummy2.erl

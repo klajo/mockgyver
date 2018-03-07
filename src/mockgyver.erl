@@ -357,6 +357,7 @@
          terminate/3, code_change/4]).
 
 -define(SERVER, ?MODULE).
+-define(CACHE_TAB, list_to_atom(?MODULE_STRING ++ "_mocking_module_cache")).
 
 -define(beam_num_bytes_alignment, 4). %% according to spec below
 
@@ -456,6 +457,7 @@ forget_all_calls() ->
 %% @end
 %%--------------------------------------------------------------------
 init({}) ->
+    create_mocking_mod_cache(),
     {ok, no_session, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -798,6 +800,7 @@ calc_atom_resemblance(A1, A2) ->
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, State) ->
     i_end_session(State), % ensure mock modules are unloaded when terminating
+    destroy_mocking_mod_cache(),
     ok.
 
 %%--------------------------------------------------------------------
@@ -1069,16 +1072,45 @@ mock_and_load_mods(MFAs) ->
     lists:foreach(fun(ModFAs) -> mock_and_load_mod(ModFAs) end,
                   ModsFAs).
 
-mock_and_load_mod({Mod, UserAddedFAs}) ->
+mock_and_load_mod(ModFAs) ->
+    {Mod, Bin} = mk_or_retrieve_mocked_mod(ModFAs),
+    {module, Mod} = code:load_binary(Mod, "mock", Bin).
+
+mk_or_retrieve_mocked_mod({Mod, UserAddedFAs}) ->
     case get_exported_fas(Mod) of
         {ok, ExportedFAs} ->
             ok = possibly_unstick_mod(Mod),
             OrigMod = reload_mod_under_different_name(Mod),
+            OrigHash = OrigMod:module_info(md5),
             FAs = get_non_bif_fas(Mod, lists:usort(ExportedFAs++UserAddedFAs)),
-            mk_mocking_mod(Mod, OrigMod, FAs);
+            case retrieve_mocking_mod(Mod, OrigHash) of
+                {ok, MockingMod} ->
+                    MockingMod;
+                undefined ->
+                    MockingMod = mk_mocking_mod(Mod, OrigMod, FAs),
+                    store_mocking_mod(MockingMod, OrigHash),
+                    MockingMod
+            end;
         {error, {no_such_module, Mod}} ->
             mk_new_mod(Mod, UserAddedFAs)
     end.
+
+create_mocking_mod_cache() ->
+    ets:new(?CACHE_TAB, [named_table]).
+
+store_mocking_mod({Mod, Bin}, Hash) ->
+    true = ets:insert_new(?CACHE_TAB, {{Mod, Hash}, Bin}).
+
+retrieve_mocking_mod(Mod, Hash) ->
+    case ets:lookup(?CACHE_TAB, {Mod, Hash}) of
+        [] ->
+            undefined;
+        [{_, Bin}] ->
+            {ok, {Mod, Bin}}
+    end.
+
+destroy_mocking_mod_cache() ->
+    ets:delete(?CACHE_TAB).
 
 possibly_unstick_mod(Mod) ->
     case code:is_sticky(Mod) of
@@ -1184,7 +1216,7 @@ mk_mod(Mod, FuncForms) ->
     %%          "~s~n",
     %%          [[erl_pp:form(Form) || Form <- Forms]]),
     {ok, Mod, Bin} = compile:forms(Forms, [report, export_all]),
-    {module, Mod} = code:load_binary(Mod, "mock", Bin).
+    {Mod, Bin}.
 
 mk_call(FunVar, As) ->
     erl_syntax:application(erl_syntax:variable(FunVar), As).
