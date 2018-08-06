@@ -48,6 +48,17 @@
 
 -record('DOWN', {mref, type, obj, info}).
 
+-define(recv(PatternAction), ?recv(PatternAction, 4000)).
+-define(recv(PatternAction, Timeout),
+        fun() ->
+                receive PatternAction
+                after Timeout ->
+                        error({failed_to_receive, ??PatternAction,
+                               process_info(self(), messages)})
+                end
+        end()).
+
+
 mock_test_() ->
     code:add_patha(test_dir()),
     ?WITH_MOCKED_SETUP(fun setup/0, fun cleanup/1).
@@ -97,6 +108,21 @@ check_no_simultaneous_mockers_outside([]) ->
 
 check_no_simultaneous_mockers_inside([{mock_end, Pid} | Msgs], Pid) ->
     check_no_simultaneous_mockers_outside(Msgs).
+
+can_test_again_after_session_dies_test_() ->
+    {timeout, ?PER_TC_TIMEOUT, fun can_test_again_after_session_dies_aux/0}.
+
+can_test_again_after_session_dies_aux() ->
+    P1 = proc_lib:spawn(fun() -> ?MOCK(fun() -> crash_me_via_process_link() end)
+                        end),
+    M1 = monitor(process, P1),
+    ?recv(#'DOWN'{mref=M1} -> ok),
+    ?MOCK(fun() -> ok end),
+    ok.
+
+crash_me_via_process_link() ->
+    spawn_link(fun() -> exit(shutdown) end),
+    timer:sleep(infinity).
 
 traces_single_arg_test(_) ->
     1 = mockgyver_dummy:return_arg(1),
