@@ -694,10 +694,14 @@ fmt_waiter_calls(#call_waiter{mfa={WaitM,WaitF,WaitA0}, loc={File,Line}}=Waiter,
     lists:flatten(
       [f("~s:~p:~n    Waiter: ~p:~p/~p~n~n", [File, Line, WaitM, WaitF, WaitA]),
        case CandMFAs of
-           [] -> f("    Unfortunately there are no similar functions~n", []);
-           _  -> f("    Did you intend to verify one of these functions?~n"
-                   "~s~n",
-                   [fmt_candidate_mfas(CandMFAs, _Indent=8)])
+           [] ->
+               f("    Unfortunately there are no similar functions~n", []);
+           [{WaitM, WaitF, WaitA}] ->
+               "";
+           _ ->
+               f("    Did you intend to verify one of these functions?~n"
+                 "~s~n",
+                 [fmt_candidate_mfas(CandMFAs, _Indent=8)])
        end,
        case CallMFAs of
            [] -> f("    Unfortunately there are no registered calls~n", []);
