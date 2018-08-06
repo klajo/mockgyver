@@ -546,12 +546,8 @@ session({start_session, MockMFAs, WatchMFAs, Pid}, From, State0) ->
     State = enqueue_session({From, MockMFAs, WatchMFAs, Pid}, State0),
     {next_state, session, State};
 session(end_session, _From, State0) ->
-    State1 = i_end_session(State0),
-    State = possibly_dequeue_session(State1),
-    case is_within_session(State) of
-        true  -> {reply, ok, session, State};
-        false -> {reply, ok, no_session, State}
-    end;
+    {NextStateName, State1} = i_end_session_and_possibly_dequeue(State0),
+    {reply, ok, NextStateName, State1};
 session({reg_call_and_get_action, MFA}, _From, State0) ->
     State = register_call(MFA, State0),
     ActionFun = i_get_action(MFA, State),
@@ -645,7 +641,7 @@ handle_sync_event(stop, _From, _StateName, State) ->
 %%                   {stop, Reason, NewState}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(#'DOWN'{mref=MRef}, StateName, #state{session_mref=MRef,
+handle_info(#'DOWN'{mref=MRef}, _StateName, #state{session_mref=MRef,
                                                   call_waiters=Waiters,
                                                   calls=Calls}=State0) ->
     %% The test died before it got a chance to clean up after itself.
@@ -654,8 +650,8 @@ handle_info(#'DOWN'{mref=MRef}, StateName, #state{session_mref=MRef,
     %% debugging.  This is probably the best we can accomplish -- being
     %% able to fail the eunit test would be nice.  Another day perhaps.
     possibly_print_call_waiters(Waiters, Calls),
-    State = i_end_session(State0),
-    {next_state, StateName, State};
+    {NextStateName, State1} = i_end_session_and_possibly_dequeue(State0),
+    {next_state, NextStateName, State1};
 handle_info({trace, _, call, MFA}, StateName, State0) ->
     State = register_call(MFA, State0),
     {next_state, StateName, State};
@@ -923,6 +919,14 @@ i_end_session(#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs,
     end,
     State#state{actions=[], calls=[], session_mref=undefined, call_waiters=[],
                 mock_mfas=[], watch_mfas=[]}.
+
+i_end_session_and_possibly_dequeue(State0) ->
+    State1 = i_end_session(State0),
+    State = possibly_dequeue_session(State1),
+    case is_within_session(State) of
+        true  -> {session, State};
+        false -> {no_session, State}
+    end.
 
 register_call(MFA, State0) ->
     State1 = store_call(MFA, State0),
