@@ -1,7 +1,7 @@
 mockgyver
 =========
 
-[![Hex pm](https://img.shields.io/hexpm/v/mockgyver.svg?style=flat)](https://hex.pm/packages/mockgyver)
+[![Hex pm](https://img.shields.io/hexpm/v/mockgyver.svg?style=flat)](https://hex.pm/packages/mockgyver) [![Build Status](https://travis-ci.org/klajo/mockgyver.svg?branch=master)](https://travis-ci.org/klajo/mockgyver)
 
 mockgyver is an Erlang tool which will make it easier
 to write EUnit tests which need to replace or alter
