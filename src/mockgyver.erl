@@ -1081,7 +1081,7 @@ mk_or_retrieve_mocked_mod({Mod, UserAddedFAs}) ->
         {ok, ExportedFAs} ->
             ok = possibly_unstick_mod(Mod),
             OrigMod = reload_mod_under_different_name(Mod),
-            OrigHash = OrigMod:module_info(md5),
+            OrigHash = get_module_checksum(OrigMod),
             FAs = get_non_bif_fas(Mod, lists:usort(ExportedFAs++UserAddedFAs)),
             case retrieve_mocking_mod(Mod, OrigHash) of
                 {ok, MockingMod} ->
@@ -1093,6 +1093,17 @@ mk_or_retrieve_mocked_mod({Mod, UserAddedFAs}) ->
             end;
         {error, {no_such_module, Mod}} ->
             mk_new_mod(Mod, UserAddedFAs)
+    end.
+
+get_module_checksum(Mod) ->
+    try
+        %% This macro was introduced in Erlang/OTP 18.0.
+        Mod:module_info(md5)
+    catch
+        error:badarg ->
+            %% This is a workaround for older releases.
+            {ok, {_Mod, Md5}} = beam_lib:md5(code:which(Mod)),
+            Md5
     end.
 
 create_mocking_mod_cache() ->
