@@ -711,10 +711,18 @@ fmt_calls(Calls, Indent) ->
     string:join([fmt_call(Call, Indent) || Call <- Calls], ",\n").
 
 fmt_call(#call{m=M, f=F, a=As}, Indent) ->
+    %% In case an argument can not be represented as a literal, replace it with
+    %% the atom 'omitted'.
+    Args = [try
+                erl_syntax:abstract(A)
+            catch
+                error:{badarg, _} ->
+                    erl_syntax:atom(omitted)
+            end || A <- As],
     Expr = erl_syntax:revert(
              erl_syntax:application(erl_syntax:atom(M),
                                     erl_syntax:atom(F),
-                                    [erl_syntax:abstract(A) || A <- As])),
+                                    Args)),
     string:chars($\s, Indent)
         ++ lists:flatten(erl_pp:expr(Expr, Indent, _Hook=none)).
 
