@@ -383,11 +383,39 @@ returns_error_on_trying_to_mock_or_check_criteria_when_not_mocking_test() ->
     %%       eunit pick it up and avoid starting the mocking
     %%       framework.  Check that this returns a nice and
     %%       understandable error message.
+    %%
+    %%       These are calls that will be made from a test case.
     ?assertError(mocking_not_started,
                  ?WHEN(mockgyver_dummy:return_arg(_) -> foo)),
     ?assertError(mocking_not_started,
                  ?WAS_CALLED(mockgyver_dummy:return_arg(_))),
+    ?assertError(mocking_not_started,
+                 ?WAIT_CALLED(mockgyver_dummy:return_arg(_))),
+    ?assertError(mocking_not_started,
+                 ?NUM_CALLS(mockgyver_dummy:return_arg(_))),
+    ?assertError(mocking_not_started,
+                 ?GET_CALLS(mockgyver_dummy:return_arg(_))),
+    ?assertError(mocking_not_started,
+                 ?FORGET_WHEN(mockgyver_dummy:return_arg(_))),
+    ?assertError(mocking_not_started,
+                 ?FORGET_CALLS(mockgyver_dummy:return_arg(_))),
+    ?assertError(mocking_not_started,
+                 ?FORGET_CALLS()),
     ok.
+
+returns_error_on_trying_to_get_mock_info_when_not_mocking_test() ->
+    %% Note: This function has intentionally no parameter, to make
+    %%       eunit pick it up and avoid starting the mocking
+    %%       framework.  Check that this returns a nice and
+    %%       understandable error message.
+    %%
+    %%       These are calls that will be made from within a mock,
+    %%       i.e. calls are mackgyver-internal and will not be seen in
+    %%       test cases.
+    ?assertError(mocking_not_started,
+                 mockgyver:get_action({mockgyver_dummy, return_arg, [1]})),
+    ?assertError(mocking_not_started,
+                 mockgyver:reg_call_and_get_action({mockgyver_dummy, return_arg, [1]})).
 
 %% Ensure that trace on lists:reverse has been enabled at least once
 %% so we can test that it has been removed in

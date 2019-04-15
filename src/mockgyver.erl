@@ -390,11 +390,11 @@ exec(MockMFAs, WatchMFAs, Fun) ->
 
 %% @private
 reg_call_and_get_action(MFA) ->
-    sync_send_event({reg_call_and_get_action, MFA}).
+    chk(sync_send_event({reg_call_and_get_action, MFA})).
 
 %% @private
 get_action(MFA) ->
-    sync_send_event({get_action, MFA}).
+    chk(sync_send_event({get_action, MFA})).
 
 %% @private
 set_action(MFA) ->
@@ -499,11 +499,7 @@ no_session(_Event, State) ->
 no_session({start_session, MockMFAs, WatchMFAs, Pid}, _From, State0) ->
     {Reply, State} = i_start_session(MockMFAs, WatchMFAs, Pid, State0),
     {reply, Reply, session, State};
-no_session({set_action, _MFA, _Opts}, _From, State) ->
-    {reply, {error, mocking_not_started}, no_session, State};
-no_session({verify, _MFA, _Operation, _Opts}, _From, State) ->
-    {reply, {error, mocking_not_started}, no_session, State};
-no_session(forget_all_calls, _From, State) ->
+no_session(_Other, _From, State) ->
     {reply, {error, mocking_not_started}, no_session, State}.
 
 %%--------------------------------------------------------------------
@@ -551,10 +547,10 @@ session(end_session, _From, State0) ->
 session({reg_call_and_get_action, MFA}, _From, State0) ->
     State = register_call(MFA, State0),
     ActionFun = i_get_action(MFA, State),
-    {reply, ActionFun, session, State};
+    {reply, {ok, ActionFun}, session, State};
 session({get_action, MFA}, _From, State) ->
     ActionFun = i_get_action(MFA, State),
-    {reply, ActionFun, session, State};
+    {reply, {ok, ActionFun}, session, State};
 session({set_action, MFA, Opts}, _From, State0) ->
     {Reply, State} = i_set_action(MFA, Opts, State0),
     {reply, Reply, session, State};
