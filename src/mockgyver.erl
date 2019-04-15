@@ -711,12 +711,33 @@ fmt_calls(Calls, Indent) ->
     string:join([fmt_call(Call, Indent) || Call <- Calls], ",\n").
 
 fmt_call(#call{m=M, f=F, a=As}, Indent) ->
-    Expr = erl_syntax:revert(
-             erl_syntax:application(erl_syntax:atom(M),
-                                    erl_syntax:atom(F),
-                                    [erl_syntax:abstract(A) || A <- As])),
-    string:chars($\s, Indent)
-        ++ lists:flatten(erl_pp:expr(Expr, Indent, _Hook=none)).
+    %% This is a crude way of pretty printing the MFA, in a way that
+    %% both literals and non-literals in As are printed. Example:
+    %%
+    %% Input:
+    %%
+    %%     #call{m = mockgyver_dummy,
+    %%           f = return_arg,
+    %%           a = [fun() -> ok end, 1, "abc", #{f=>100}, lists:seq(1,100)]
+    %%
+    %% Output:
+    %%
+    %%         mockgyver_dummy:return_arg([#Fun<mockgyver_tests.0.124618725>,1,"abc",
+    %%                                     #{f => 100},
+    %%                                     [1,2,3,4,5,6,7,8,9,10,11,12,13|...]])
+    %% ^^^^^^^^--- this is the indent
+    IndentStr = string:chars($\s, Indent),
+    %% This is all the text up to, but not including, the first "("
+    Preamble = io_lib:format("~s~p:~p", [IndentStr, M, F]),
+    PreambleLen = string:length(Preamble),
+    %% This is all the arguments pretty-printed. Since they're in a
+    %% list and that will also be included in the output, strip the
+    %% leading "[" and trailing "]" from the output.
+    FmtStr = f("~~~p.~pP", [_LineLength=80, _ArgIdent=PreambleLen + 1]),
+    AsStr0 = f(FmtStr, [As, _Depth=20]),
+    AsStr = string:sub_string(AsStr0, 2, string:length(AsStr0)-1),
+    %% Crudeness is done
+    f("~s(~s)", [Preamble, AsStr]).
 
 get_sorted_calls_similar_to_waiter(#call_waiter{}=Waiter, Calls) ->
     ResemCalls0 = calc_resemblance_for_calls(Waiter, Calls),
