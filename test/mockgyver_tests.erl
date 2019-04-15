@@ -460,6 +460,37 @@ create_dummy2(Func) ->
     {ok, Mod} = compile:file(Filename, [{outdir, Dir}]).
 
 
+can_mock_a_dynamically_generated_module_test_() ->
+    %% Check that it is possible to mock a module that is loaded into
+    %% the vm, but does not exist on disk, such as a dynamically
+    %% generated module.
+    RText = lists:flatten(io_lib:format("~p", [make_ref()])),
+    ok = compile_load_txt_forms(
+           mockgyver_dyn_ref_text,
+           ["-module(mockgyver_dyn_ref_text).\n",
+            "-export([ref_text/0]).\n",
+            "ref_text() -> \"" ++ RText ++ "\".\n"]),
+    RText = mockgyver_dyn_ref_text:ref_text(),
+    {timeout, ?PER_TC_TIMEOUT,
+     fun() -> can_mock_a_dynamically_generated_module_test_aux(RText) end}.
+
+can_mock_a_dynamically_generated_module_test_aux(_OrigRText) ->
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dyn_ref_text:ref_text() -> "a"),
+                  ?assertEqual("a", mockgyver_dyn_ref_text:ref_text())
+          end).
+
+compile_load_txt_forms(Mod, TextForms) ->
+    Forms = [begin
+                 {ok, Tokens, _} = erl_scan:string(Text),
+                 {ok, F} = erl_parse:parse_form(Tokens),
+                 F
+             end
+             || Text <- TextForms],
+    {ok, Mod, Bin, []} = compile:noenv_forms(Forms, [binary, return]),
+    {module, Mod} = code:load_binary(Mod, "dyn", Bin),
+    ok.
+
 flush() ->
     receive Msg ->
 	    [Msg | flush()]

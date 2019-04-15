@@ -1085,10 +1085,10 @@ mock_and_load_mod(ModFAs) ->
     {module, Mod} = code:load_binary(Mod, "mock", Bin).
 
 mk_or_retrieve_mocked_mod({Mod, UserAddedFAs}) ->
-    case get_exported_fas(Mod) of
-        {ok, ExportedFAs} ->
+    case get_exported_fas_and_object_code(Mod) of
+        {ok, {ExportedFAs, Bin, Filename}} ->
             ok = possibly_unstick_mod(Mod),
-            OrigMod = reload_mod_under_different_name(Mod),
+            OrigMod = reload_mod_under_different_name(Mod, Bin, Filename),
             OrigHash = get_module_checksum(OrigMod),
             FAs = get_non_bif_fas(Mod, lists:usort(ExportedFAs++UserAddedFAs)),
             case retrieve_mocking_mod(Mod, OrigHash) of
@@ -1150,9 +1150,8 @@ possibly_unstick_mod(Mod) ->
             ok
     end.
 
-reload_mod_under_different_name(Mod) ->
+reload_mod_under_different_name(Mod, OrigBin0, Filename) ->
     {module, Mod} = code:ensure_loaded(Mod),
-    {Mod, OrigBin0, Filename} = code:get_object_code(Mod),
     OrigMod = list_to_atom(atom_to_list(Mod)++"^"),
     OrigBin = rename(OrigBin0, OrigMod),
     unload_mod(Mod),
@@ -1273,6 +1272,24 @@ group_fas_by_mod(MFAs) ->
                          dict:new(),
                          MFAs),
     dict:to_list(ModFAs).
+
+get_exported_fas_and_object_code(Mod) ->
+    case get_exported_fas(Mod) of
+        {ok, FAs} ->
+            case code:get_object_code(Mod) of
+                {Mod, Bin, Filename} ->
+                    {ok, {FAs, Bin, Filename}};
+                error ->
+                    %% Likely a module dynamically generated and loaded
+                    %% on the fly. Unload it first to replace it with new
+                    %% contents. It will be impossible to restore such a
+                    %% module after mocking has completed anyway.
+                    unload_mod(Mod),
+                    {error, {no_such_module, Mod}}
+            end;
+        {error, _}=Error ->
+            Error
+    end.
 
 get_exported_fas(Mod) ->
     try
