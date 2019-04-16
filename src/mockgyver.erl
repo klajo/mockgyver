@@ -1116,6 +1116,13 @@ mk_or_retrieve_mocked_mod({Mod, UserAddedFAs}) ->
                     store_mocking_mod(MockingMod, OrigHash),
                     MockingMod
             end;
+        {error, {no_object_code, Mod}} ->
+            %% Likely a module dynamically generated and loaded
+            %% on the fly. Unload it first to replace it with new
+            %% contents. It will be impossible to restore such a
+            %% module after mocking has completed anyway.
+            unload_mod(Mod),
+            mk_new_mod(Mod, UserAddedFAs);
         {error, {no_such_module, Mod}} ->
             mk_new_mod(Mod, UserAddedFAs)
     end.
@@ -1297,12 +1304,7 @@ get_exported_fas_and_object_code(Mod) ->
                 {Mod, Bin, Filename} ->
                     {ok, {FAs, Bin, Filename}};
                 error ->
-                    %% Likely a module dynamically generated and loaded
-                    %% on the fly. Unload it first to replace it with new
-                    %% contents. It will be impossible to restore such a
-                    %% module after mocking has completed anyway.
-                    unload_mod(Mod),
-                    {error, {no_such_module, Mod}}
+                    {error, {no_object_code, Mod}}
             end;
         {error, _}=Error ->
             Error
