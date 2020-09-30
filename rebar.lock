@@ -1,8 +1,8 @@
 {"1.1.0",
-[{<<"eunit_addons">>,{pkg,<<"eunit_addons">>,<<"1.0.0">>},0},
+[{<<"eunit_addons">>,{pkg,<<"eunit_addons">>,<<"1.0.1">>},0},
  {<<"parse_trans">>,{pkg,<<"parse_trans">>,<<"3.0.0">>},0}]}.
 [
 {pkg_hash,[
- {<<"eunit_addons">>, <<"AA57D3FC78B35C5E7BFACE74E668A5D3E46433F3D0D3FAA4092E4F27AC0A51AB">>},
+ {<<"eunit_addons">>, <<"8307927DF98CDEC317847336CC05E8EBE29604870AF0EF11B902921CC4D783E6">>},
  {<<"parse_trans">>, <<"9E96B1C9C3A0DF54E7B76F8F685D38BFA1EB21B31E042B1D1A5A70258E4DB1E3">>}]}
 ].
