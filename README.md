@@ -3,7 +3,7 @@ mockgyver
 
 [![Hex pm](https://img.shields.io/hexpm/v/mockgyver.svg?style=flat)](https://hex.pm/packages/mockgyver)
 [![Build Status](https://github.com/klajo/mockgyver/workflows/Erlang%20CI/badge.svg)](https://github.com/klajo/mockgyver/actions?query=workflow%3A%22Erlang+CI%22)
-[![Erlang Versions](https://img.shields.io/badge/Supported%20Erlang%2FOTP%20releases-19%20to%2023-blue)](http://www.erlang.org)
+[![Erlang Versions](https://img.shields.io/badge/Supported%20Erlang%2FOTP%20releases-21%20to%2024-blue)](http://www.erlang.org)
 
 mockgyver is an Erlang tool which will make it easier
 to write EUnit tests which need to replace or alter
