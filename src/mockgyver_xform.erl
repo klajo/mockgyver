@@ -305,7 +305,7 @@ rename_vars_2({var, L, VarName0}=Form, {NameMap0, RenameP}) ->
                 "_"++_ ->
                     {Form, {NameMap0, RenameP}};
                 VarNameStr0 ->
-                    VarName1 = list_to_atom("____" ++ VarNameStr0),
+                    VarName1 = list_to_atom(VarNameStr0 ++ "@mockgyver"),
                     NameMap = [{VarName0, VarName1} | NameMap0],
                     {{var, L, VarName1}, {NameMap, RenameP}}
             end;

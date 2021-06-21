@@ -157,12 +157,15 @@ was_called_defaults_to_once_test(_) ->
 matches_called_arguments_test(_) ->
     N = 42,
     O = 1,
+    P = 4711,
     mockgyver_dummy:return_arg(1),
-    mockgyver_dummy:return_arg({N,O}),
+    mockgyver_dummy:return_arg({N, O}),
+    mockgyver_dummy:return_arg(P, P),
     ?WAS_CALLED(mockgyver_dummy:return_arg(N), never),
     ?WAS_CALLED(mockgyver_dummy:return_arg(O), once),
-    ?WAS_CALLED(mockgyver_dummy:return_arg({_,N}), never),
-    ?WAS_CALLED(mockgyver_dummy:return_arg({N,O}), once).
+    ?WAS_CALLED(mockgyver_dummy:return_arg({_, N}), never),
+    ?WAS_CALLED(mockgyver_dummy:return_arg({N, O}), once),
+    ?WAS_CALLED(mockgyver_dummy:return_arg(P, P), once).
 
 allows_was_called_guards_test(_) ->
     mockgyver_dummy:return_arg(1),
