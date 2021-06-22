@@ -37,8 +37,6 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 -include("../include/mockgyver.hrl").
 
--compile(export_all).
-
 %% This macro was introduced in Erlang/OTP 19.0.
 %% This is a workaround for older releases.
 -ifndef(FUNCTION_NAME).
