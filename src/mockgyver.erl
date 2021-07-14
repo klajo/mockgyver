@@ -361,7 +361,7 @@
          code_change/4]).
 
 -define(SERVER, ?MODULE).
--define(CACHE_TAB, list_to_atom(?MODULE_STRING ++ "_mocking_module_cache")).
+-define(CACHE_TAB, list_to_atom(?MODULE_STRING ++ "_module_cache")).
 
 -define(beam_num_bytes_alignment, 4). %% according to spec below
 
@@ -375,6 +375,11 @@
 
 %-record(trace, {msg}).
 -record('DOWN', {mref, type, obj, info}).
+
+-define(mocking_key(Mod, Hash), {mocking_mod, Mod, Hash}).
+-record(mocking_mod,
+        {key :: ?mocking_key(module(), integer()),
+         code :: binary()}).
 
 %%%===================================================================
 %%% API
@@ -458,7 +463,7 @@ callback_mode() ->
 %% @end
 %%--------------------------------------------------------------------
 init({}) ->
-    create_mocking_mod_cache(),
+    create_mod_cache(),
     {ok, no_session, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -722,7 +727,7 @@ calc_atom_resemblance(A1, A2) ->
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, State) ->
     i_end_session(State), % ensure mock modules are unloaded when terminating
-    destroy_mocking_mod_cache(),
+    destroy_mod_cache(),
     ok.
 
 %%--------------------------------------------------------------------
@@ -1040,21 +1045,23 @@ get_module_checksum(Mod) ->
             Md5
     end.
 
-create_mocking_mod_cache() ->
-    ets:new(?CACHE_TAB, [named_table]).
+create_mod_cache() ->
+    ets:new(?CACHE_TAB, [named_table, {keypos,2}]).
 
 store_mocking_mod({Mod, Bin}, Hash) ->
-    true = ets:insert_new(?CACHE_TAB, {{Mod, Hash}, Bin}).
+    true = ets:insert_new(?CACHE_TAB,
+                          #mocking_mod{key=?mocking_key(Mod, Hash),
+                                       code=Bin}).
 
 retrieve_mocking_mod(Mod, Hash) ->
-    case ets:lookup(?CACHE_TAB, {Mod, Hash}) of
+    case ets:lookup(?CACHE_TAB, ?mocking_key(Mod, Hash)) of
         [] ->
             undefined;
-        [{_, Bin}] ->
+        [#mocking_mod{code=Bin}] ->
             {ok, {Mod, Bin}}
     end.
 
-destroy_mocking_mod_cache() ->
+destroy_mod_cache() ->
     ets:delete(?CACHE_TAB).
 
 possibly_unstick_mod(Mod) ->
