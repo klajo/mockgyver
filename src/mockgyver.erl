@@ -368,7 +368,9 @@
 -define(cand_resem_threshold, 5). %% threshold for similarity (0 = identical)
 
 -record(state, {actions=[], calls, session_mref, session_waiters=queue:new(),
-                call_waiters=[], mock_mfas=[], watch_mfas=[]}).
+                call_waiters=[], mock_mfas=[], watch_mfas=[],
+                %% For restoring loaded modules during session_end:
+                init_modinfos=[]}).
 -record(call, {m, f, a}).
 -record(action, {mfa, func}).
 -record(call_waiter, {from, mfa, crit, loc}).
@@ -750,9 +752,10 @@ sync_send_event(Msg) ->
     gen_statem:call(?SERVER, Msg).
 
 i_start_session(MockMFAs, WatchMFAs, Pid, State0) ->
-    State = State0#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs},
+    State1 = State0#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs},
     MockMods = get_unique_mods_by_mfas(MockMFAs),
-    mock_and_load_mods(MockMFAs),
+    Modinfos = mock_and_load_mods(MockMFAs),
+    State = State1#state{init_modinfos=Modinfos},
     possibly_shutdown_old_tracer(),
     erlang:trace(all, true, [call, {tracer, self()}]),
     %% We mustn't trace non-mocked modules, since we'll register
@@ -836,17 +839,17 @@ remove_trace_on_all_mfas(MFAs) ->
     [erlang:trace_pattern(MFA, false, [local]) || MFA <- MFAs].
 
 i_end_session(#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs,
-                     session_mref=MRef} = State) ->
+                     session_mref=MRef, init_modinfos=Modinfos} = State) ->
     MockMods = get_unique_mods_by_mfas(MockMFAs),
     TraceMFAs = get_trace_mfas(WatchMFAs, MockMods),
     remove_trace_on_all_mfas(TraceMFAs),
-    unload_mods(MockMods),
+    unload_mods(Modinfos),
     erlang:trace(all, false, [call, {tracer, self()}]),
     if MRef =/= undefined -> erlang:demonitor(MRef, [flush]);
        true               -> ok
     end,
     State#state{actions=[], calls=[], session_mref=undefined, call_waiters=[],
-                mock_mfas=[], watch_mfas=[]}.
+                mock_mfas=[], watch_mfas=[], init_modinfos=[]}.
 
 i_end_session_and_possibly_dequeue(State0) ->
     State1 = i_end_session(State0),
@@ -1001,12 +1004,13 @@ possibly_add_location({ok, _}=OkRes, _Opts) ->
 
 mock_and_load_mods(MFAs) ->
     ModsFAs = group_fas_by_mod(MFAs),
-    lists:foreach(fun(ModFAs) -> mock_and_load_mod(ModFAs) end,
-                  ModsFAs).
+    lists:map(fun(ModFAs) -> mock_and_load_mod(ModFAs) end,
+              ModsFAs).
 
 mock_and_load_mod(ModFAs) ->
-    {Mod, Bin} = mk_or_retrieve_mocking_mod(ModFAs),
-    {module, Mod} = code:load_binary(Mod, "mock", Bin).
+    {Mod, Bin, Info} = mk_or_retrieve_mocking_mod(ModFAs),
+    {module, Mod} = code:load_binary(Mod, "mock", Bin),
+    {Mod, Info}.
 
 mk_or_retrieve_mocking_mod({Mod, UserAddedFAs}) ->
     case get_exported_fas_and_object_code(Mod) of
@@ -1017,11 +1021,11 @@ mk_or_retrieve_mocking_mod({Mod, UserAddedFAs}) ->
             FAs = get_non_bif_fas(Mod, lists:usort(ExportedFAs++UserAddedFAs)),
             case retrieve_mocking_mod(Mod, Checksum) of
                 {ok, MockingMod} ->
-                    MockingMod;
+                    erlang:append_element(MockingMod, loaded);
                 undefined ->
                     MockingMod = mk_mocking_mod(Mod, RenamedMod, FAs),
                     store_mocking_mod(MockingMod, Checksum),
-                    MockingMod
+                    erlang:append_element(MockingMod, loaded)
             end;
         {error, {no_object_code, Mod}} ->
             %% Likely a module dynamically generated and loaded
@@ -1029,9 +1033,9 @@ mk_or_retrieve_mocking_mod({Mod, UserAddedFAs}) ->
             %% contents. It will be impossible to restore such a
             %% module after mocking has completed anyway.
             unload_mod(Mod),
-            mk_new_mod(Mod, UserAddedFAs);
+            erlang:append_element(mk_new_mod(Mod, UserAddedFAs), not_loaded);
         {error, {no_such_module, Mod}} ->
-            mk_new_mod(Mod, UserAddedFAs)
+            erlang:append_element(mk_new_mod(Mod, UserAddedFAs), not_loaded)
     end.
 
 get_module_checksum(Mod) ->
@@ -1185,8 +1189,9 @@ mk_args(N) ->
 mk_arg(N) ->
     erl_syntax:variable(list_to_atom("A"++integer_to_list(N))).
 
-unload_mods(Mods) ->
-    lists:foreach(fun unload_mod/1, Mods).
+unload_mods(Modinfos) ->
+    lists:foreach(fun({Mod, _Info}) -> unload_mod(Mod) end,
+                  Modinfos).
 
 unload_mod(Mod) ->
     case code:is_loaded(Mod) of
