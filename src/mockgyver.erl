@@ -398,6 +398,17 @@
 
 -type checksum() :: term().
 
+-ifdef(OTP_RELEASE).
+%% The stack trace syntax introduced in Erlang 21 coincided
+%% with the introduction of the predefined macro OTP_RELEASE.
+-define(with_stacktrace(Class, Reason, Stack),
+        Class:Reason:Stack ->).
+-else. % OTP_RELEASE
+-define(with_stacktrace(Class, Reason, Stack),
+        Class:Reason ->
+               Stack = erlang:get_stacktrace(),).
+-endif. % OTP_RELEASE.
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -1038,11 +1049,11 @@ mock_and_load_mods(MFAs) ->
     %% Assume loading of some may potentially fail.
     code:ensure_modules_loaded(Mods),
     [ok = possibly_unstick_mod(Mod) || Mod <- Mods],
-    Modinfos = lists:map(fun collect_init_modinfo/1, Mods),
-    MockMods = lists:map(fun({FAs, Modinfo}) ->
-                                 mock_mod(FAs, Modinfo)
-                         end,
-                         lists:zip(ModFAs, Modinfos)),
+    Modinfos = par_map(fun collect_init_modinfo/1, Mods),
+    MockMods = par_map(fun({FAs, Modinfo}) ->
+                               mock_mod(FAs, Modinfo)
+                       end,
+                       lists:zip(ModFAs, Modinfos)),
     ok = load_mods([{Mod, "mock", Code} || {Mod, Code} <- MockMods]),
     Modinfos.
 
@@ -1204,7 +1215,7 @@ get_file_checksum(Filename) ->
     end.
 
 create_mod_cache() ->
-    ets:new(?CACHE_TAB, [named_table, {keypos,2}]).
+    ets:new(?CACHE_TAB, [named_table, {keypos,2}, public]).
 
 store_mocking_mod({Mod, Bin}, Hash) ->
     true = ets:insert_new(?CACHE_TAB,
@@ -1590,3 +1601,24 @@ num_pad_bytes(BinSize) ->
 update_form_size(<<"FOR1", _OldSz:32, Rest/binary>> = Bin) ->
     Sz = size(Bin) - 8,
     <<"FOR1", Sz:32, Rest/binary>>.
+
+par_map(F, List) ->
+    PMs = [spawn_monitor(wrap_call(F, Elem)) || Elem <- List],
+    [receive {'DOWN', MRef, _, _, Res} -> unwrap(Res) end
+     || {_Pid, MRef} <- PMs].
+
+wrap_call(F, Elem) ->
+    fun() ->
+            exit(try {ok, F(Elem)}
+                 catch ?with_stacktrace(Class, Reason, Stack)
+                         {error, Class, Reason, Stack}
+                 end)
+    end.
+
+unwrap({ok, Res}) -> Res;
+unwrap({error, Class, Reason, InnerStack}) ->
+    try error(just_to_get_a_stack)
+    catch ?with_stacktrace(error, just_to_get_a_stack,OuterStack)
+             erlang:raise(Class, Reason, InnerStack ++ OuterStack)
+    end.
+
