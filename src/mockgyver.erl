@@ -869,7 +869,7 @@ i_end_session(#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs,
     MockMods = get_unique_mods_by_mfas(MockMFAs),
     TraceMFAs = get_trace_mfas(WatchMFAs, MockMods),
     remove_trace_on_all_mfas(TraceMFAs),
-    unload_mods(Modinfos),
+    restore_mods(Modinfos),
     erlang:trace(all, false, [call, {tracer, self()}]),
     if MRef =/= undefined -> erlang:demonitor(MRef, [flush]);
        true               -> ok
@@ -1354,13 +1354,15 @@ mk_args(N) ->
 mk_arg(N) ->
     erl_syntax:variable(list_to_atom("A"++integer_to_list(N))).
 
-unload_mods(Modinfos) ->
-    Mods = [case Modinfo of
-                #modinfo{key=?modinfo_key(Mod)} -> Mod;
-                #nomodinfo{key=?modinfo_key(Mod)} -> Mod
-            end
-            || Modinfo <- Modinfos],
-    lists:foreach(fun unload_mod/1, Mods).
+restore_mods(Modinfos) ->
+    %% To speed things up for next session (commonly next eunit test),
+    %% reload the original module instead of unloading, if possible.
+    load_mods([{Mod, Filename, Code}
+               || #modinfo{key=?modinfo_key(Mod),
+                           code=Code,
+                           filename=Filename} <- Modinfos]),
+    [unload_mod(Mod) || #nomodinfo{key=?modinfo_key(Mod)} <- Modinfos],
+    ok.
 
 unload_mod(Mod) ->
     case code:is_loaded(Mod) of
