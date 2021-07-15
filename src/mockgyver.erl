@@ -383,6 +383,21 @@
         {key :: ?mocking_key(module(), integer()),
          code :: binary()}).
 
+-define(modinfo_key(Mod), {modinfo, Mod}).
+-record(modinfo,
+        %% This record is for caching modules to load and mock,
+        %% to minimize disk searches and exported functions and arities.
+        {key :: ?modinfo_key(module()),
+         exported_fas :: [{Fn::atom(), Arity::non_neg_integer()}],
+         code :: binary(),
+         filename :: string(),
+         checksum :: checksum()}).
+-record(nomodinfo,
+        %% For modules to mock when we have no cached info.
+        {key :: ?modinfo_key(module())}).
+
+-type checksum() :: term().
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -1003,39 +1018,170 @@ possibly_add_location({ok, _}=OkRes, _Opts) ->
 
 
 mock_and_load_mods(MFAs) ->
+    %% General strategy:
+    %%
+    %% Do as much in over lists of modules as possible,
+    %% using such functions in the code module, since this is somewhat
+    %% faster on average.
+    %%
+    %% Unloading a module can take time due to gc of literal data,
+    %% so do as few such operations as possibly needed.
+    %% Avoid looking for modules in the code path, cache such things,
+    %% to speed things up when the code path is long.
+
     ModsFAs = group_fas_by_mod(MFAs),
-    lists:map(fun(ModFAs) -> mock_and_load_mod(ModFAs) end,
-              ModsFAs).
+    {Mods, ModFAs} = lists:unzip(ModsFAs),
+    %% We will have to try to load any missing modules in order
+    %% to be able to mock them. So we might as well try to load
+    %% all modules we will need, under the assumption that including
+    %% an already loaded module is cheap.
+    %% Assume loading of some may potentially fail.
+    code:ensure_modules_loaded(Mods),
+    [ok = possibly_unstick_mod(Mod) || Mod <- Mods],
+    Modinfos = lists:map(fun collect_init_modinfo/1, Mods),
+    MockMods = lists:map(fun({FAs, Modinfo}) ->
+                                 mock_mod(FAs, Modinfo)
+                         end,
+                         lists:zip(ModFAs, Modinfos)),
+    ok = load_mods([{Mod, "mock", Code} || {Mod, Code} <- MockMods]),
+    Modinfos.
 
-mock_and_load_mod(ModFAs) ->
-    {Mod, Bin, Info} = mk_or_retrieve_mocking_mod(ModFAs),
-    {module, Mod} = code:load_binary(Mod, "mock", Bin),
-    {Mod, Info}.
-
-mk_or_retrieve_mocking_mod({Mod, UserAddedFAs}) ->
-    case get_exported_fas_and_object_code(Mod) of
-        {ok, {ExportedFAs, Bin, Filename}} ->
-            ok = possibly_unstick_mod(Mod),
-            RenamedMod = reload_mod_under_different_name(Mod, Bin, Filename),
-            Checksum = get_module_checksum(Mod),
-            FAs = get_non_bif_fas(Mod, lists:usort(ExportedFAs++UserAddedFAs)),
-            case retrieve_mocking_mod(Mod, Checksum) of
-                {ok, MockingMod} ->
-                    erlang:append_element(MockingMod, loaded);
-                undefined ->
-                    MockingMod = mk_mocking_mod(Mod, RenamedMod, FAs),
-                    store_mocking_mod(MockingMod, Checksum),
-                    erlang:append_element(MockingMod, loaded)
+collect_init_modinfo(Mod) ->
+    %% At this point it is assumed that Mod is loaded, if it existed on disk.
+    %%
+    %% #modinfo{} records get cached into the ?CACHE_TAB. #nomodinfo{} do not.
+    case ets:lookup(?CACHE_TAB, ?modinfo_key(Mod)) of
+        [#modinfo{key=Key, checksum=CachedCSum, filename=Filename}=Modinfo] ->
+            %% Check if the modinfo known to be up-to-date,
+            %% otherwise invalidate the entry.
+            %%
+            %% Reading the checksum from file is faster than loading the
+            %% module to ask it, even though that implies parsing some chunks.
+            case erlang:module_loaded(Mod) of
+                true ->
+                    LoadedModChecksumMatchesCached =
+                        get_module_checksum(Mod) =:= CachedCSum,
+                    BeamChecksumOnDiskMatchesCached =
+                        get_file_checksum(Filename) =:= CachedCSum,
+                    if LoadedModChecksumMatchesCached,
+                       BeamChecksumOnDiskMatchesCached ->
+                            Modinfo;
+                       true ->
+                            update_modinfo_cache_from_disk(Modinfo)
+                    end;
+                false ->
+                    ets:delete(?CACHE_TAB, Key),
+                    #nomodinfo{key=Key}
             end;
-        {error, {no_object_code, Mod}} ->
-            %% Likely a module dynamically generated and loaded
-            %% on the fly. Unload it first to replace it with new
-            %% contents. It will be impossible to restore such a
-            %% module after mocking has completed anyway.
-            unload_mod(Mod),
-            erlang:append_element(mk_new_mod(Mod, UserAddedFAs), not_loaded);
-        {error, {no_such_module, Mod}} ->
-            erlang:append_element(mk_new_mod(Mod, UserAddedFAs), not_loaded)
+        [] ->
+            case erlang:module_loaded(Mod) of
+                true ->
+                    update_modinfo_cache_from_loaded_mod(Mod);
+                false ->
+                    #nomodinfo{key=?modinfo_key(Mod)}
+            end
+    end.
+
+update_modinfo_cache_from_loaded_mod(Mod) ->
+    {ok, FAs} = get_exported_fas(Mod),
+    case get_code(Mod) of
+        {ok, {Code, Filename}} ->
+            Checksum = get_module_checksum(Mod),
+            Modinfo  = #modinfo{key=?modinfo_key(Mod),
+                                exported_fas=FAs,
+                                code=Code,
+                                filename=Filename,
+                                checksum=Checksum},
+            ets:insert(?CACHE_TAB, Modinfo),
+            Modinfo;
+        error ->
+            #nomodinfo{key=?modinfo_key(Mod)}
+    end.
+
+update_modinfo_cache_from_disk(#modinfo{key=?modinfo_key(Mod)=Key,
+                                        filename=Filename}=Modinfo0) ->
+    case file:read_file(Filename) of
+        {ok, Code} ->
+            {ok, {Mod, [{exports, FAs}]}} =
+                beam_lib:chunks(Code, [exports]),
+            Checksum = beam_lib:md5(Code),
+            Modinfo1 = Modinfo0#modinfo{key=?modinfo_key(Mod),
+                                        exported_fas=filter_fas(FAs),
+                                        code=Code,
+                                        checksum=Checksum},
+            ets:insert(?CACHE_TAB, Modinfo1),
+            Modinfo1;
+        {error, _} ->
+            ets:delete(?CACHE_TAB, Key),
+            #nomodinfo{key=?modinfo_key(Mod)}
+    end.
+
+get_code(Mod) ->
+    %% It should be loaded already, if it exists on disk, so ask.
+    %% But if code paths have changed, it might not be available any more.
+    case code:is_loaded(Mod) of
+        false ->
+            error;
+        {file, preloaded} ->
+            error;
+        {file, cover_compiled} ->
+            error;
+        {file, Filename} ->
+            case file:read_file(Filename) of
+                {ok, Bin} ->
+                    {ok, {Bin, Filename}};
+                {error, _} ->
+                    error
+            end
+    end.
+
+mock_mod(UserAddedFAs, #modinfo{key=?modinfo_key(Mod),
+                                exported_fas=ExportedFAs,
+                                code=Bin,
+                                filename=Filename}) when is_binary(Bin) ->
+    RenamedMod = reload_mod_under_different_name(Mod, Bin, Filename),
+    Checksum = get_module_checksum(Mod),
+    FAs = get_non_bif_fas(Mod, lists:usort(ExportedFAs++UserAddedFAs)),
+    case retrieve_mocking_mod(Mod, Checksum) of
+        {ok, MockingMod} ->
+            MockingMod;
+        undefined ->
+            MockingMod = mk_mocking_mod(Mod, RenamedMod, FAs),
+            store_mocking_mod(MockingMod, Checksum),
+            MockingMod
+    end;
+mock_mod(UserAddedFAs, #nomodinfo{key=?modinfo_key(Mod)}) ->
+    mk_new_mod(Mod, UserAddedFAs).
+
+load_mods(Modules) ->
+    [code:purge(Mod) || {Mod, _Filename, _Code} <- Modules],
+    load_mods_aux(Modules).
+
+load_mods_aux(Modules) ->
+    case code:atomic_load(Modules) of
+        ok ->
+            ok;
+        {error, ModReasons} ->
+            %% possible reasons could be on_load_not_allowed, load those
+            %% individually
+            {NoErrorMods, OnLoadMods} =
+                lists:partition(
+                  fun({Mod, _, _}) ->
+                          case lists:keyfind(Mod, 1, ModReasons) of
+                              false ->
+                                  true;
+                              {Mod, on_load_not_allowed} ->
+                                  false;
+                              {Mod, Other} ->
+                                  error({unexpected_atomic_load_fail,
+                                         Mod, Other})
+                          end
+                  end,
+                  Modules),
+            ok = load_mods_aux(NoErrorMods),
+            [{module, Mod} = code:load_binary(Mod, Filename, Code)
+             || {Mod, Filename, Code} <- OnLoadMods],
+            ok
     end.
 
 get_module_checksum(Mod) ->
@@ -1047,6 +1193,14 @@ get_module_checksum(Mod) ->
             %% This is a workaround for older releases.
             {ok, {_Mod, Md5}} = beam_lib:md5(code:which(Mod)),
             Md5
+    end.
+
+get_file_checksum(Filename) ->
+    case beam_lib:md5(Filename) of
+        {ok, {_Mod, Checksum}} ->
+            Checksum;
+        {error, beam_lib, Reason} ->
+            {error, Reason}
     end.
 
 create_mod_cache() ->
@@ -1190,8 +1344,12 @@ mk_arg(N) ->
     erl_syntax:variable(list_to_atom("A"++integer_to_list(N))).
 
 unload_mods(Modinfos) ->
-    lists:foreach(fun({Mod, _Info}) -> unload_mod(Mod) end,
-                  Modinfos).
+    Mods = [case Modinfo of
+                #modinfo{key=?modinfo_key(Mod)} -> Mod;
+                #nomodinfo{key=?modinfo_key(Mod)} -> Mod
+            end
+            || Modinfo <- Modinfos],
+    lists:foreach(fun unload_mod/1, Mods).
 
 unload_mod(Mod) ->
     case code:is_loaded(Mod) of
@@ -1213,28 +1371,18 @@ group_fas_by_mod(MFAs) ->
                          MFAs),
     dict:to_list(ModFAs).
 
-get_exported_fas_and_object_code(Mod) ->
-    case get_exported_fas(Mod) of
-        {ok, FAs} ->
-            case code:get_object_code(Mod) of
-                {Mod, Bin, Filename} ->
-                    {ok, {FAs, Bin, Filename}};
-                error ->
-                    {error, {no_object_code, Mod}}
-            end;
-        {error, _}=Error ->
-            Error
-    end.
-
 get_exported_fas(Mod) ->
     try
-        {ok, [{F, A} || {F, A} <- Mod:module_info(exports),
-                        {F, A} =/= {module_info, 0},
-                        {F, A} =/= {module_info, 1}]}
+        {ok, filter_fas(Mod:module_info(exports))}
     catch
         error:undef ->
             {error, {no_such_module, Mod}}
     end.
+
+filter_fas(FAs) ->
+    [{F, A} || {F, A} <- FAs,
+               {F, A} =/= {module_info, 0},
+               {F, A} =/= {module_info, 1}].
 
 get_non_bif_fas(Mod, FAs) ->
     [{F, A} || {F, A} <- FAs, not erlang:is_builtin(Mod, F, A)].
