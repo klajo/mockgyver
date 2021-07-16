@@ -380,7 +380,7 @@
 
 -define(mocking_key(Mod, Hash), {mocking_mod, Mod, Hash}).
 -record(mocking_mod,
-        {key :: ?mocking_key(module(), integer()),
+        {key :: ?mocking_key(module(), binary()),
          code :: binary()}).
 
 -define(modinfo_key(Mod), {modinfo, Mod}).
@@ -733,6 +733,9 @@ get_candidate_modules(#call_waiter{mfa={WaitM, _WaitF, _WaitA}}) ->
 is_renamed_module(M) ->
     lists:suffix("^", atom_to_list(M)).
 
+renamed_module_name(Mod) ->
+    list_to_atom(atom_to_list(Mod)++"^").
+
 %% Calculate a positive integer which corresponds to the similarity
 %% between two MFAs.  Returns 0 when they are equal.
 calc_mfa_resemblance({M1, F1, A1}, {M2, F2, A2}) ->
@@ -1049,14 +1052,19 @@ mock_and_load_mods(MFAs) ->
     %% Assume loading of some may potentially fail.
     code:ensure_modules_loaded(Mods),
     [ok = possibly_unstick_mod(Mod) || Mod <- Mods],
-    Modinfos = par_map(fun collect_init_modinfo/1, Mods),
-    MockMods = par_map(fun({FAs, Modinfo}) ->
-                               mock_mod(FAs, Modinfo)
-                       end,
-                       lists:zip(ModFAs, Modinfos)),
+    ModinfosWithCacheModDeltas = par_map(fun collect_init_modinfo/1, Mods),
+    MockMods = lists:append(
+                 par_map(fun({FAs, {Modinfo, CacheModDelta}}) ->
+                                 mock_mod(FAs, Modinfo, CacheModDelta)
+                         end,
+                         lists:zip(ModFAs, ModinfosWithCacheModDeltas))),
     ok = load_mods([{Mod, "mock", Code} || {Mod, Code} <- MockMods]),
+    {Modinfos, _CacheModDeltas} = lists:unzip(ModinfosWithCacheModDeltas),
     Modinfos.
 
+-spec collect_init_modinfo(module()) -> {Modinfo, CacheModDelta} when
+      Modinfo :: #modinfo{} | #nomodinfo{},
+      CacheModDelta :: cache_up_to_date | cache_invalidated | cache_updated.
 collect_init_modinfo(Mod) ->
     %% At this point it is assumed that Mod is loaded, if it existed on disk.
     %%
@@ -1076,20 +1084,20 @@ collect_init_modinfo(Mod) ->
                         get_file_checksum(Filename) =:= CachedCSum,
                     if LoadedModChecksumMatchesCached,
                        BeamChecksumOnDiskMatchesCached ->
-                            Modinfo;
+                            {Modinfo, cache_up_to_date};
                        true ->
                             update_modinfo_cache_from_disk(Modinfo)
                     end;
                 false ->
                     ets:delete(?CACHE_TAB, Key),
-                    #nomodinfo{key=Key}
+                    {#nomodinfo{key=Key}, cache_invalidated}
             end;
         [] ->
             case erlang:module_loaded(Mod) of
                 true ->
                     update_modinfo_cache_from_loaded_mod(Mod);
                 false ->
-                    #nomodinfo{key=?modinfo_key(Mod)}
+                    {#nomodinfo{key=?modinfo_key(Mod)}, cache_up_to_date}
             end
     end.
 
@@ -1104,9 +1112,9 @@ update_modinfo_cache_from_loaded_mod(Mod) ->
                                 filename=Filename,
                                 checksum=Checksum},
             ets:insert(?CACHE_TAB, Modinfo),
-            Modinfo;
+            {Modinfo, cache_updated};
         error ->
-            #nomodinfo{key=?modinfo_key(Mod)}
+            {#nomodinfo{key=?modinfo_key(Mod)}, cache_up_to_date}
     end.
 
 update_modinfo_cache_from_disk(#modinfo{key=?modinfo_key(Mod)=Key,
@@ -1121,10 +1129,10 @@ update_modinfo_cache_from_disk(#modinfo{key=?modinfo_key(Mod)=Key,
                                         code=Code,
                                         checksum=Checksum},
             ets:insert(?CACHE_TAB, Modinfo1),
-            Modinfo1;
+            {Modinfo1, cache_updated};
         {error, _} ->
             ets:delete(?CACHE_TAB, Key),
-            #nomodinfo{key=?modinfo_key(Mod)}
+            {#nomodinfo{key=?modinfo_key(Mod)}, cache_invalidated}
     end.
 
 get_code(Mod) ->
@@ -1146,23 +1154,23 @@ get_code(Mod) ->
             end
     end.
 
-mock_mod(UserAddedFAs, #modinfo{key=?modinfo_key(Mod),
-                                exported_fas=ExportedFAs,
-                                code=Bin,
-                                filename=Filename}) when is_binary(Bin) ->
-    RenamedMod = reload_mod_under_different_name(Mod, Bin, Filename),
-    Checksum = get_module_checksum(Mod),
+mock_mod(UserAddedFAs,
+         #modinfo{key=?modinfo_key(Mod), exported_fas=ExportedFAs,
+                  checksum=Checksum}=Modinfo,
+         CacheModDelta) ->
+    RenamedMod = renamed_module_name(Mod), % module -> module^
+    Renamed = ensure_renamed_mod_to_load(RenamedMod, Modinfo, CacheModDelta),
     FAs = get_non_bif_fas(Mod, lists:usort(ExportedFAs++UserAddedFAs)),
     case retrieve_mocking_mod(Mod, Checksum) of
         {ok, MockingMod} ->
-            MockingMod;
+            [MockingMod] ++ Renamed;
         undefined ->
             MockingMod = mk_mocking_mod(Mod, RenamedMod, FAs),
             store_mocking_mod(MockingMod, Checksum),
-            MockingMod
+            [MockingMod] ++ Renamed
     end;
-mock_mod(UserAddedFAs, #nomodinfo{key=?modinfo_key(Mod)}) ->
-    mk_new_mod(Mod, UserAddedFAs).
+mock_mod(UserAddedFAs, #nomodinfo{key=?modinfo_key(Mod)}, _CacheDeltaInfo) ->
+    [mk_new_mod(Mod, UserAddedFAs)].
 
 load_mods(Modules) ->
     [code:purge(Mod) || {Mod, _Filename, _Code} <- Modules],
@@ -1252,13 +1260,27 @@ possibly_unstick_mod(Mod) ->
             ok
     end.
 
-reload_mod_under_different_name(Mod, OrigBin, Filename) ->
-    {module, Mod} = code:ensure_loaded(Mod),
-    RenamedMod = list_to_atom(atom_to_list(Mod)++"^"),
-    RenamedBin = rename(OrigBin, RenamedMod),
-    unload_mod(Mod),
-    {module, RenamedMod} = code:load_binary(RenamedMod, Filename, RenamedBin),
-    RenamedMod.
+ensure_renamed_mod_to_load(RenamedMod, Modinfo, CacheModDelta) ->
+    case CacheModDelta of
+        cache_up_to_date ->
+            %% Will normally not be needed unless the renamed mod^ was
+            %% unloaded by someone else with between or during tests.
+            %% It is cheap when nothing needs to be done, though.
+            %% Assume nobody modifies it in between though.
+            ensure_renamed_mod_to_load_aux(RenamedMod, Modinfo);
+        cache_updated ->
+            unload_mod(RenamedMod),
+            ensure_renamed_mod_to_load_aux(RenamedMod, Modinfo)
+    end.
+
+ensure_renamed_mod_to_load_aux(RenamedMod, #modinfo{code=Code}) ->
+    case erlang:module_loaded(RenamedMod) of
+        true ->
+            [];
+        false ->
+            RenamedCode = rename(Code, RenamedMod),
+            [{RenamedMod, RenamedCode}]
+    end.
 
 mk_mocking_mod(Mod, RenamedMod, ExportedFAs) ->
     mk_mod(Mod, mk_mocking_funcs(Mod, RenamedMod, ExportedFAs)).
