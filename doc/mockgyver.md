@@ -7,7 +7,7 @@ Mock functions and modules.
 
 Copyright (c) 2011, Klas Johansson
 
-__Behaviours:__ [`gen_fsm`](gen_fsm.md).
+__Behaviours:__ [`gen_statem`](gen_statem.md).
 
 __Authors:__ Klas Johansson.
 
