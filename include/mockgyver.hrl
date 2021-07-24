@@ -5,23 +5,48 @@
 
 -compile({parse_transform, mockgyver_xform}).
 
+-ifdef(OTP_RELEASE).
+-define(mockgyver_get_stacktrace__(),
+        try error(get_stack)
+        catch error:get_stack:St -> St
+        end).
+-else. % OTP_RELEASE
+-define(mockgyver_get_stacktrace__(),
+        try error(get_stack)
+        catch error:get_stack -> erlang:get_stacktrace()
+        end).
+-endif. % OTP_RELEASE.
+
+
+
 %% run tests with a mock
 -define(WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
                           Tests, MockOpts),
-        ?WITH_FUN(fun(__MockTest) ->
-                          ?MOCK(fun() ->
-                                        Env = SetupFun(),
-                                        try
-                                            apply(?MODULE, __MockTest, [Env])
-                                        after
-                                            CleanupFun(Env)
-                                        end
-                                end,
-                                MockOpts)
-                  end,
-                  ForAllTimeout,
-                  PerTcTimeout,
-                  Tests)).
+        %% Wrap it in a fun so we can have a few local variables
+        fun() ->
+                StackId = erlang:phash2(?mockgyver_get_stacktrace__()),
+                Base = #{num_sessions => length(Tests),
+                         signature => {?FILE, ?LINE, ?FUNCTION_NAME, StackId}},
+                IndexedTests = lists:zip(lists:seq(1, length(Tests)),
+                                         Tests),
+                {timeout, ForAllTimeout,           %% timeout for all tests
+                 [{timeout, PerTcTimeout,          %% timeout for each test
+                   {spawn,
+                    {atom_to_list(__Test),         %% label per test
+                     fun() ->
+                             MockSeqInfo = Base#{index => I},
+                             ?MOCK(fun() ->
+                                           Env = SetupFun(),
+                                           try
+                                               apply(?MODULE, __Test, [Env])
+                                           after
+                                               CleanupFun(Env)
+                                           end
+                                   end,
+                                   MockOpts ++ [{mock_sequence, MockSeqInfo}])
+                     end}}}
+                  || {I, __Test} <- IndexedTests]}
+        end()).
 
 -define(WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
                           Tests),

@@ -499,9 +499,10 @@ init({}) ->
 %% @doc State for when no session is yet started
 %% @end
 %%--------------------------------------------------------------------
-no_session({call, From}, {start_session, MockMFAs, WatchMFAs, _MockOpts, Pid},
+no_session({call, From}, {start_session, MockMFAs, WatchMFAs, MockOpts, Pid},
            State0) ->
-    {Reply, State} = i_start_session(MockMFAs, WatchMFAs, Pid, State0),
+    {Reply, State} = i_start_session(MockMFAs, WatchMFAs, MockOpts, Pid,
+                                     State0),
     {next_state, session, State, {reply, From, Reply}};
 no_session(EventType, Event, State) ->
     handle_other(EventType, Event, ?FUNCTION_NAME, State).
@@ -511,9 +512,10 @@ no_session(EventType, Event, State) ->
 %% @doc State for when a session has been started
 %% @end
 %%--------------------------------------------------------------------
-session({call, From}, {start_session, MockMFAs, WatchMFAs, _MockOpts, Pid},
+session({call, From}, {start_session, MockMFAs, WatchMFAs, MockOpts, Pid},
         State0) ->
-    State = enqueue_session({From, MockMFAs, WatchMFAs, Pid}, State0),
+    State = enqueue_session({From, MockMFAs, WatchMFAs, MockOpts, Pid},
+                            State0),
     {keep_state, State};
 session({call, From}, end_session, State0) ->
     {NextStateName, State1} = i_end_session_and_possibly_dequeue(State0),
@@ -602,8 +604,9 @@ enqueue_session(Session, #state{session_waiters=Waiters}=State) ->
 
 possibly_dequeue_session(#state{session_waiters=Waiters0}=State0) ->
     case queue:out(Waiters0) of
-        {{value, {From, MockMFAs, WatchMFAs, Pid}}, Waiters} ->
-            {Reply, State} = i_start_session(MockMFAs, WatchMFAs, Pid, State0),
+        {{value, {From, MockMFAs, WatchMFAs, MockOpts, Pid}}, Waiters} ->
+            {Reply, State} = i_start_session(MockMFAs, WatchMFAs, MockOpts,
+                                             Pid, State0),
             gen_server:reply(From, Reply),
             State#state{session_waiters=Waiters};
         {empty, _} ->
@@ -782,7 +785,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 sync_send_event(Msg) ->
     gen_statem:call(?SERVER, Msg).
 
-i_start_session(MockMFAs, WatchMFAs, Pid, State0) ->
+i_start_session(MockMFAs, WatchMFAs, _MockOpts, Pid, State0) ->
     State1 = State0#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs},
     MockMods = get_unique_mods_by_mfas(MockMFAs),
     Modinfos = mock_and_load_mods(MockMFAs),
