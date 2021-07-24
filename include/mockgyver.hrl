@@ -7,7 +7,7 @@
 
 %% run tests with a mock
 -define(WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
-                          Tests),
+                          Tests, MockOpts),
         ?WITH_FUN(fun(__MockTest) ->
                           ?MOCK(fun() ->
                                         Env = SetupFun(),
@@ -16,11 +16,17 @@
                                         after
                                             CleanupFun(Env)
                                         end
-                                end)
+                                end,
+                                MockOpts)
                   end,
                   ForAllTimeout,
                   PerTcTimeout,
                   Tests)).
+
+-define(WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
+                          Tests),
+        ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
+                           Tests, [])).
 
 -define(WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout),
         ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
@@ -33,7 +39,9 @@
 -define(WRAP(Type, Expr),
         {'$mock', Type, Expr, {?FILE, ?LINE}}).
 
--define(MOCK(Expr), ?WRAP(m_init, (Expr))).
+-define(MOCK(Expr), ?WRAP(m_init, {(Expr), []})).
+
+-define(MOCK(Expr, MockOpts), ?WRAP(m_init, {(Expr), MockOpts})).
 
 -define(WHEN(Expr), ?WRAP(m_when, case x of Expr end)).
 

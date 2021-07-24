@@ -339,7 +339,7 @@
 -compile({parse_transform, parse_trans_codegen}).
 
 %% API
--export([exec/3]).
+-export([exec/4]).
 
 -export([start_link/0]).
 -export([stop/0]).
@@ -414,10 +414,10 @@
 %%%===================================================================
 
 %% @private
-exec(MockMFAs, WatchMFAs, Fun) ->
+exec(MockMFAs, WatchMFAs, Fun, MockOpts) ->
     ok = ensure_application_started(),
     try
-        case start_session(MockMFAs, WatchMFAs) of
+        case start_session(MockMFAs, WatchMFAs, MockOpts) of
             ok                 -> Fun();
             {error, _} = Error -> erlang:error(Error)
         end
@@ -456,8 +456,8 @@ ensure_application_started() ->
         {error, _} = Error            -> Error
     end.
 
-start_session(MockMFAs, WatchMFAs) ->
-    sync_send_event({start_session, MockMFAs, WatchMFAs, self()}).
+start_session(MockMFAs, WatchMFAs, MockOpts) ->
+    sync_send_event({start_session, MockMFAs, WatchMFAs, MockOpts, self()}).
 
 end_session() ->
     sync_send_event(end_session).
@@ -499,7 +499,8 @@ init({}) ->
 %% @doc State for when no session is yet started
 %% @end
 %%--------------------------------------------------------------------
-no_session({call, From}, {start_session, MockMFAs, WatchMFAs, Pid}, State0) ->
+no_session({call, From}, {start_session, MockMFAs, WatchMFAs, _MockOpts, Pid},
+           State0) ->
     {Reply, State} = i_start_session(MockMFAs, WatchMFAs, Pid, State0),
     {next_state, session, State, {reply, From, Reply}};
 no_session(EventType, Event, State) ->
@@ -510,7 +511,8 @@ no_session(EventType, Event, State) ->
 %% @doc State for when a session has been started
 %% @end
 %%--------------------------------------------------------------------
-session({call, From}, {start_session, MockMFAs, WatchMFAs, Pid}, State0) ->
+session({call, From}, {start_session, MockMFAs, WatchMFAs, _MockOpts, Pid},
+        State0) ->
     State = enqueue_session({From, MockMFAs, WatchMFAs, Pid}, State0),
     {keep_state, State};
 session({call, From}, end_session, State0) ->

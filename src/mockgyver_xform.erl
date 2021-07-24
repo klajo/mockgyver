@@ -51,7 +51,7 @@
 -export([parse_transform/2]).
 
 %% Records
--record(m_init, {exec_fun, loc}).
+-record(m_init, {exec_fun, opts, loc}).
 -record(m_when, {m, f, a, action, loc}).
 -record(m_verify, {m, f, a, g, crit, loc}).
 
@@ -80,7 +80,7 @@ rewrite_init_stmts(Forms, Ctxt, Env) ->
 
 rewrite_init_stmts_2(Type, Form0, _Ctxt, Env) ->
     case is_mock_expr(Type, Form0) of
-        {true, #m_init{exec_fun=ExecFun}} ->
+        {true, #m_init{exec_fun=ExecFun, opts=MockOpts}} ->
             Befores = [],
             MockMfas = Env#env.mock_mfas,
             TraceMfas = Env#env.trace_mfas,
@@ -88,7 +88,8 @@ rewrite_init_stmts_2(Type, Form0, _Ctxt, Env) ->
                        fun() ->
                                mockgyver:exec({'$var',  MockMfas},
                                               {'$var',  TraceMfas},
-                                              {'$form', ExecFun})
+                                              {'$form', ExecFun},
+                                              {'$form', MockOpts})
                        end),
             Afters = [],
             {Befores, Form, Afters, false, Env};
@@ -194,8 +195,9 @@ analyze_mock_form([Type, Expr, Location0]) ->
         m_verify -> analyze_verify_expr(Expr, Location)
     end.
 
-analyze_init_expr(Expr, Location) ->
-    #m_init{exec_fun=Expr, loc=Location}.
+analyze_init_expr(ExprMockOpts, Location) ->
+    [Expr, MockOpts] = erl_syntax:tuple_elements(ExprMockOpts),
+    #m_init{exec_fun=Expr, opts=MockOpts, loc=Location}.
 
 analyze_when_expr(Expr, Location) ->
     %% The sole purpose of the entire if expression is to let us write
