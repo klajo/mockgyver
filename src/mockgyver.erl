@@ -1008,14 +1008,14 @@ mk_or_retrieve_mocked_mod({Mod, UserAddedFAs}) ->
         {ok, {ExportedFAs, Bin, Filename}} ->
             ok = possibly_unstick_mod(Mod),
             OrigMod = reload_mod_under_different_name(Mod, Bin, Filename),
-            OrigHash = get_module_checksum(OrigMod),
+            Checksum = get_module_checksum(Mod),
             FAs = get_non_bif_fas(Mod, lists:usort(ExportedFAs++UserAddedFAs)),
-            case retrieve_mocking_mod(Mod, OrigHash) of
+            case retrieve_mocking_mod(Mod, Checksum) of
                 {ok, MockingMod} ->
                     MockingMod;
                 undefined ->
                     MockingMod = mk_mocking_mod(Mod, OrigMod, FAs),
-                    store_mocking_mod(MockingMod, OrigHash),
+                    store_mocking_mod(MockingMod, Checksum),
                     MockingMod
             end;
         {error, {no_object_code, Mod}} ->
