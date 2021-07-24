@@ -301,7 +301,7 @@ fails_gracefully_when_mocking_a_bif_test(_) ->
     %% mocking the bif should fail gracefully
     ?assertError({cannot_mock_bif, {math, cos, 1}}, ?WHEN(math:cos(_) -> 0)).
 
-can_call_original_module_test(_) ->
+can_call_renamed_module_test(_) ->
     ?WHEN(mockgyver_dummy:return_arg(N) -> 2*'mockgyver_dummy^':return_arg(N)),
     6 = mockgyver_dummy:return_arg(3).
 
