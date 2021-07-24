@@ -695,9 +695,9 @@ get_candidate_mfas_by_module(CandM, WaitMFA) ->
 get_candidate_modules(#call_waiter{mfa={WaitM, _WaitF, _WaitA}}) ->
     [CandM || {CandM, _Loaded} <- code:all_loaded(),
               calc_atom_resemblance(WaitM, CandM) =< ?cand_resem_threshold,
-              not is_mocked_module(CandM)].
+              not is_renamed_module(CandM)].
 
-is_mocked_module(M) ->
+is_renamed_module(M) ->
     lists:suffix("^", atom_to_list(M)).
 
 %% Calculate a positive integer which corresponds to the similarity
@@ -1000,21 +1000,21 @@ mock_and_load_mods(MFAs) ->
                   ModsFAs).
 
 mock_and_load_mod(ModFAs) ->
-    {Mod, Bin} = mk_or_retrieve_mocked_mod(ModFAs),
+    {Mod, Bin} = mk_or_retrieve_mocking_mod(ModFAs),
     {module, Mod} = code:load_binary(Mod, "mock", Bin).
 
-mk_or_retrieve_mocked_mod({Mod, UserAddedFAs}) ->
+mk_or_retrieve_mocking_mod({Mod, UserAddedFAs}) ->
     case get_exported_fas_and_object_code(Mod) of
         {ok, {ExportedFAs, Bin, Filename}} ->
             ok = possibly_unstick_mod(Mod),
-            OrigMod = reload_mod_under_different_name(Mod, Bin, Filename),
+            RenamedMod = reload_mod_under_different_name(Mod, Bin, Filename),
             Checksum = get_module_checksum(Mod),
             FAs = get_non_bif_fas(Mod, lists:usort(ExportedFAs++UserAddedFAs)),
             case retrieve_mocking_mod(Mod, Checksum) of
                 {ok, MockingMod} ->
                     MockingMod;
                 undefined ->
-                    MockingMod = mk_mocking_mod(Mod, OrigMod, FAs),
+                    MockingMod = mk_mocking_mod(Mod, RenamedMod, FAs),
                     store_mocking_mod(MockingMod, Checksum),
                     MockingMod
             end;
@@ -1076,22 +1076,24 @@ possibly_unstick_mod(Mod) ->
             ok
     end.
 
-reload_mod_under_different_name(Mod, OrigBin0, Filename) ->
+reload_mod_under_different_name(Mod, OrigBin, Filename) ->
     {module, Mod} = code:ensure_loaded(Mod),
-    OrigMod = list_to_atom(atom_to_list(Mod)++"^"),
-    OrigBin = rename(OrigBin0, OrigMod),
+    RenamedMod = list_to_atom(atom_to_list(Mod)++"^"),
+    RenamedBin = rename(OrigBin, RenamedMod),
     unload_mod(Mod),
-    {module, OrigMod} = code:load_binary(OrigMod, Filename, OrigBin),
-    OrigMod.
+    {module, RenamedMod} = code:load_binary(RenamedMod, Filename, RenamedBin),
+    RenamedMod.
 
-mk_mocking_mod(Mod, OrigMod, ExportedFAs) ->
-    mk_mod(Mod, mk_mocked_funcs(Mod, OrigMod, ExportedFAs)).
+mk_mocking_mod(Mod, RenamedMod, ExportedFAs) ->
+    mk_mod(Mod, mk_mocking_funcs(Mod, RenamedMod, ExportedFAs)).
 
-mk_mocked_funcs(Mod, OrigMod, ExportedFAs) ->
-    lists:map(fun(ExportedFA) -> mk_mocked_func(Mod, OrigMod, ExportedFA) end,
+mk_mocking_funcs(Mod, RenamedMod, ExportedFAs) ->
+    lists:map(fun(ExportedFA) ->
+                      mk_mocking_func(Mod, RenamedMod, ExportedFA)
+              end,
               ExportedFAs).
 
-mk_mocked_func(Mod, OrigMod, {F, A}) ->
+mk_mocking_func(Mod, RenamedMod, {F, A}) ->
     %% Generate a function like this (mod, func and arguments vary):
     %%
     %%     func(A2, A1) ->
@@ -1109,7 +1111,7 @@ mk_mocked_func(Mod, OrigMod, {F, A}) ->
                                         erl_syntax:list(Args)])]),
              [erl_syntax:clause([erl_syntax:atom(undefined)],
                                 none,
-                                [mk_call(OrigMod, F, Args)]),
+                                [mk_call(RenamedMod, F, Args)]),
               erl_syntax:clause([erl_syntax:variable('ActionFun')],
                                 none,
                                 [mk_call('ActionFun', Args)])])],
