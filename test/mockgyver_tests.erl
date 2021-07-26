@@ -522,6 +522,135 @@ can_mock_a_module_with_on_load_aux() ->
                   abc123 = mockgyver_dummy3:z(abc123)
           end).
 
+mock_sequence_of_just_1_test_() ->
+    {timeout, ?PER_TC_TIMEOUT, fun mock_sequence_of_just_1_aux/0}.
+
+mock_sequence_of_just_1_aux() ->
+    create_dummy(mockgyver_dummy4, a),
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummy4:a(_) -> mocked),
+                  mocked = mockgyver_dummy4:a(1)
+          end,
+          [{mock_sequence, #{num_sessions => 1, index => 1,
+                             signature => {?FUNCTION_NAME, ?LINE}}}]),
+    %% mocking should be unloaded after the one mock in the sequence
+    ?assertEqual(not_mocked, mockgyver_dummy4:a(not_mocked)).
+
+two_mock_sequences_test_() ->
+    {timeout, ?PER_TC_TIMEOUT, fun two_mock_sequences_aux/0}.
+
+two_mock_sequences_aux() ->
+    %% This imitates two ?WITH_MOCKED_SETUP after each other.
+    create_dummy(mockgyver_dummy5, a),
+    create_dummy(mockgyver_dummy6, a),
+    UnmockedChecksum5 = mockgyver_dummy5:module_info(md5),
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummy5:a(_) -> mocked_1_1),
+                  mocked_1_1 = mockgyver_dummy5:a(1)
+          end,
+          [{mock_sequence, #{num_sessions => 2, index => 1, signature => a}}]),
+    %% It should stay mocked across sessions in a mock_sequence,
+    %% that's the optimizaion. Can't call it to  test it though---that
+    %% would require a session---so test it in another way.
+    ?assertNotEqual(UnmockedChecksum5, mockgyver_dummy5:module_info(md5)),
+    ?MOCK(fun() ->
+                  %% The ?WHEN from previous ?MOCK in the mock sueqence
+                  %% should not initially be active:
+                  1 = mockgyver_dummy5:a(1),
+                  %% But it should still be possible to mock it again:
+                  ?WHEN(mockgyver_dummy5:a(_) -> mocked_1_2),
+                  mocked_1_2 = mockgyver_dummy5:a(1)
+          end,
+          [{mock_sequence, #{num_sessions => 2, index => 2, signature => a}}]),
+    %% It should get restored after the last session in the sequence
+    ?assertEqual(UnmockedChecksum5, mockgyver_dummy5:module_info(md5)),
+    1 = mockgyver_dummy5:a(1),
+    %% Next sequence:
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummy6:a(_) -> mocked_2_1),
+                  not_mocked = mockgyver_dummy5:a(not_mocked),
+                  mocked_2_1 = mockgyver_dummy6:a(1)
+          end,
+          [{mock_sequence, #{num_sessions => 2, index => 1, signature => b}}]),
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummy6:a(_) -> mocked_2_2),
+                  not_mocked = mockgyver_dummy5:a(not_mocked),
+                  mocked_2_2 = mockgyver_dummy6:a(1)
+          end,
+          [{mock_sequence, #{num_sessions => 2, index => 2, signature => b}}]),
+    ok.
+
+timeout_in_mock_sequence_test_() ->
+    {timeout, ?PER_TC_TIMEOUT, fun timeout_in_mock_sequence_aux/0}.
+
+timeout_in_mock_sequence_aux() ->
+    {ok, _} = application:ensure_all_started(mockgyver),
+    with_tmp_app_env(mock_sequence_timeout, 1,
+                     fun timeout_in_mock_sequence_aux2/0).
+
+timeout_in_mock_sequence_aux2() ->
+    create_dummy(mockgyver_dummy7, a),
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummy7:a(_) -> mocked),
+                  mocked = mockgyver_dummy7:a(1)
+          end,
+          [{mock_sequence, #{num_sessions => 2, index => 1,
+                             signature => {?FUNCTION_NAME, ?LINE}}}]),
+    ok = await_state(no_session, 1000),
+    %% the mocking should be unloaded after the timeout
+    ?assertEqual(not_mocked, mockgyver_dummy7:a(not_mocked)).
+
+signature_changes_mid_mock_sequence_test_() ->
+    {timeout, ?PER_TC_TIMEOUT, fun signature_changes_mid_mock_sequence_aux/0}.
+
+signature_changes_mid_mock_sequence_aux() ->
+    %% This imitates a ?WITH_MOCKED_SETUP that gets interrupted,
+    %% then another ?WITH_MOCKED_SETUP starts.
+    create_dummy(mockgyver_dummy8, a),
+    create_dummy(mockgyver_dummy9, a),
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummy8:a(_) -> mocked),
+                  mocked = mockgyver_dummy8:a(1)
+          end,
+          [{mock_sequence, #{num_sessions => 3, index => 1, signature => x}}]),
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummy8:a(_) -> mocked),
+                  mocked = mockgyver_dummy8:a(1)
+          end,
+          [{mock_sequence, #{num_sessions => 3, index => 2, signature => x}}]),
+    %% now the sequence gets interrupted, a new sequence signature:
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummy9:a(_) -> mocked),
+                  %% The x-signature's mocking should be unload by now:
+                  no_longer_mocked = mockgyver_dummy8:a(no_longer_mocked),
+                  mocked           = mockgyver_dummy9:a(1)
+          end,
+          [{mock_sequence, #{num_sessions => 1, index => 1, signature => y}}]),
+    ok.
+
+await_state(StateName, N) ->
+    case sys:get_state(mockgyver) of
+        {StateName, _StateData} ->
+            ok;
+        _Other when N >= 1 ->
+            timer:sleep(5),
+            await_state(StateName, N - 1);
+        Other when N == 0 ->
+            {timeout_waiting_for_state, StateName, Other}
+    end.
+
+with_tmp_app_env(Var, Val, F) ->
+    Orig = application:get_env(mockgyver, Var),
+    application:set_env(mockgyver, Var, Val),
+    try F()
+    after
+        %% Make sure the temporary timeout is restored:
+        case Orig of
+            undefined     -> application:unset_env(mockgyver, Var);
+            {ok, OrigVal} -> application:set_env(mockgyver, Var, OrigVal)
+        end
+    end.
+
 create_dummy(Mod, Func) ->
     Dir = test_dir(),
     Filename = filename:join(Dir, atom_to_list(Mod) ++ ".erl"),

@@ -353,7 +353,8 @@
 
 %% state functions
 -export([no_session/3,
-         session/3]).
+         session/3,
+         await_next_session/3]).
 %% gen_statem callbacks
 -export([init/1,
          callback_mode/0,
@@ -370,7 +371,9 @@
 -record(state, {actions=[], calls, session_mref, session_waiters=queue:new(),
                 call_waiters=[], mock_mfas=[], watch_mfas=[],
                 %% For restoring loaded modules during session_end:
-                init_modinfos=[]}).
+                init_modinfos=[],
+                %% For optimizing eg eunit test generators ?WITH_MOCKED_SETUP
+                scenario=undefined}).
 -record(call, {m, f, a}).
 -record(action, {mfa, func}).
 -record(call_waiter, {from, mfa, crit, loc}).
@@ -398,6 +401,11 @@
 
 -type checksum() :: term().
 
+-record(mock_seq,
+        {num_sessions :: pos_integer(),
+         current_session :: pos_integer(),
+         signature}).
+
 -ifdef(OTP_RELEASE).
 %% The stack trace syntax introduced in Erlang 21 coincided
 %% with the introduction of the predefined macro OTP_RELEASE.
@@ -414,6 +422,19 @@
 %%%===================================================================
 
 %% @private
+%% @doc Mock options:
+%% <dl>
+%%   <dt>`{mock_sequence, #{num_sessions := NumSessions :: pos_integer(),
+%%                          index := Index :: pos_integer(), % 1..NumSessions
+%%                          signature := term()}}'</dt>
+%%   <dd>For use typically with `?WITH_MOCKED_SETUP': enable speeding
+%%       up of mockings by retaining them across tests.
+%%       For this to activate, the `Index' must be monotonically increasing
+%%       from 1 through `NumSessions' in all calls to `exec/4', and the
+%%       `num_sessions' and `signature' fields as well as the `MockMFAs'
+%%       be identical. The next call to `exec/4' must occur within
+%%       a short timeframe, or the mockings will be restored.</dd>
+%% </dl>
 exec(MockMFAs, WatchMFAs, Fun, MockOpts) ->
     ok = ensure_application_started(),
     try
@@ -518,8 +539,9 @@ session({call, From}, {start_session, MockMFAs, WatchMFAs, MockOpts, Pid},
                             State0),
     {keep_state, State};
 session({call, From}, end_session, State0) ->
-    {NextStateName, State1} = i_end_session_and_possibly_dequeue(State0),
-    {next_state, NextStateName, State1, {reply, From, ok}};
+    {NextStateName, State1, Actions} =
+        i_end_session_and_possibly_dequeue(State0),
+    {next_state, NextStateName, State1, [{reply, From, ok} | Actions]};
 session({call, From}, {reg_call_and_get_action, MFA}, State0) ->
     State = register_call(MFA, State0),
     ActionFun = i_get_action(MFA, State),
@@ -569,10 +591,33 @@ session(EventType, Event, State) ->
     handle_other(EventType, Event, ?FUNCTION_NAME, State).
 
 %%--------------------------------------------------------------------
+%% @private
+%% @doc State for when we have mockings still loaded and a new session
+%%      is expected within very short, commonly because we are
+%%      executing in a ?WITH_MOCKED_SETUP.
+%% @end
+%%--------------------------------------------------------------------
+await_next_session({call, From},
+                   {start_session, MockMFAs, WatchMFAs, MockOpts, Pid},
+                   State0) ->
+    {Reply, State} = i_start_session(MockMFAs, WatchMFAs, MockOpts, Pid,
+                                     State0),
+    {next_state, session, State, {reply, From, Reply}};
+await_next_session(state_timeout, start_session_expired,
+                   #state{init_modinfos=Modinfos}=State) ->
+    restore_mods(Modinfos),
+    {next_state, no_session, State#state{init_modinfos=[],
+                                         mock_mfas=[],
+                                         scenario=undefined}};
+await_next_session(EventType, Event, State) ->
+    handle_other(EventType, Event, ?FUNCTION_NAME, State).
+
+%%--------------------------------------------------------------------
 
 handle_other({call, From}, stop, _StateName, _State) ->
     {stop_and_reply, normal, {reply, From, ok}};
-handle_other({call, From}, _Other, no_session, _State) ->
+handle_other({call, From}, _Other, StateName, _State)
+  when StateName /= session ->
     {keep_state_and_data, {reply, From, {error, mocking_not_started}}};
 handle_other({call, From}, Req, _StateName, _State) ->
     {keep_state_and_data, {reply, From, {error, {invalid_request, Req}}}};
@@ -586,8 +631,9 @@ handle_other(info, #'DOWN'{mref=MRef}, _StateName,
     %% debugging.  This is probably the best we can accomplish -- being
     %% able to fail the eunit test would be nice.  Another day perhaps.
     possibly_print_call_waiters(Waiters, Calls),
-    {NextStateName, State1} = i_end_session_and_possibly_dequeue(State0),
-    {next_state, NextStateName, State1};
+    {NextStateName, State1, Actions} =
+        i_end_session_and_possibly_dequeue(State0),
+    {next_state, NextStateName, State1, Actions};
 handle_other(info, {trace, _, call, MFA}, _StateName, State0) ->
     State = register_call(MFA, State0),
     {keep_state, State};
@@ -762,7 +808,8 @@ calc_atom_resemblance(A1, A2) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, State) ->
-    i_end_session(State), % ensure mock modules are unloaded when terminating
+    %% ensure mock modules are unloaded when terminating
+    i_end_session_force_restore_mods(State),
     destroy_mod_cache(),
     ok.
 
@@ -785,11 +832,17 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 sync_send_event(Msg) ->
     gen_statem:call(?SERVER, Msg).
 
-i_start_session(MockMFAs, WatchMFAs, _MockOpts, Pid, State0) ->
-    State1 = State0#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs},
+
+i_start_session(MockMFAs, WatchMFAs, MockOpts, Pid,
+                #state{init_modinfos=Modinfos0}=State0) ->
+    {IsMockingAlreadySetup, State1} =
+        restore_mods_if_new_scenario(MockOpts, MockMFAs, State0),
+    State2 = State1#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs},
     MockMods = get_unique_mods_by_mfas(MockMFAs),
-    Modinfos = mock_and_load_mods(MockMFAs),
-    State = State1#state{init_modinfos=Modinfos},
+    Modinfos = if not IsMockingAlreadySetup -> mock_and_load_mods(MockMFAs);
+                  IsMockingAlreadySetup -> Modinfos0
+               end,
+    State = State2#state{init_modinfos=Modinfos},
     possibly_shutdown_old_tracer(),
     erlang:trace(all, true, [call, {tracer, self()}]),
     %% We mustn't trace non-mocked modules, since we'll register
@@ -801,7 +854,34 @@ i_start_session(MockMFAs, WatchMFAs, _MockOpts, Pid, State0) ->
             MRef = erlang:monitor(process, Pid),
             {ok, State#state{calls=[], session_mref=MRef}};
         {error, _}=Error ->
-            {Error, i_end_session(State)}
+            {Error, i_end_session_force_restore_mods(State)}
+    end.
+
+restore_mods_if_new_scenario(MockOpts, MockMFAs,
+                             #state{mock_mfas=PrevMockMFAs,
+                                    init_modinfos=Modinfos,
+                                    scenario=Scenario0}=State) ->
+    case {get_mocking_sequence_opt(MockOpts), Scenario0} of
+        {#{num_sessions := NumSessions, signature := Sig, index := Next},
+         #mock_seq{num_sessions=NumSessions, signature=Sig,
+                   current_session=Curr}} when Next =:= Curr + 1,
+                                               MockMFAs =:= PrevMockMFAs ->
+            Scenario = Scenario0#mock_seq{current_session=Next},
+            {true, State#state{scenario=Scenario}};
+        {#{num_sessions := NumSessions, signature := Sig, index := I}, _} ->
+            %% Either:
+            %% - starting a new sequence
+            %% - resuming a sequence after the safety timeout expired
+            %%   in await_next_session (maybe very overloaded host?)
+            %% - starting another sequence after one sequence was aborted
+            restore_mods(Modinfos),
+            Scenario = #mock_seq{num_sessions=NumSessions,
+                                 current_session=I,
+                                 signature=Sig},
+            {false, State#state{init_modinfos=[], scenario=Scenario}};
+        {undefined, _} ->
+            restore_mods(Modinfos),
+            {false, State#state{init_modinfos=[], scenario=undefined}}
     end.
 
 possibly_shutdown_old_tracer() ->
@@ -872,26 +952,39 @@ setup_trace_on_all_mfas(MFAs) ->
 remove_trace_on_all_mfas(MFAs) ->
     [erlang:trace_pattern(MFA, false, [local]) || MFA <- MFAs].
 
-i_end_session(#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs,
-                     session_mref=MRef, init_modinfos=Modinfos} = State) ->
-    MockMods = get_unique_mods_by_mfas(MockMFAs),
+i_end_session(#state{mock_mfas=MockMFAs0, watch_mfas=WatchMFAs,
+                     session_mref=MRef} = State0) ->
+    MockMods = get_unique_mods_by_mfas(MockMFAs0),
     TraceMFAs = get_trace_mfas(WatchMFAs, MockMods),
     remove_trace_on_all_mfas(TraceMFAs),
-    restore_mods(Modinfos),
+    State = restore_mods_unless_in_mock_seq_scenario(State0),
     erlang:trace(all, false, [call, {tracer, self()}]),
     if MRef =/= undefined -> erlang:demonitor(MRef, [flush]);
        true               -> ok
     end,
     State#state{actions=[], calls=[], session_mref=undefined, call_waiters=[],
-                mock_mfas=[], watch_mfas=[], init_modinfos=[]}.
+                watch_mfas=[]}.
 
 i_end_session_and_possibly_dequeue(State0) ->
     State1 = i_end_session(State0),
     State = possibly_dequeue_session(State1),
     case is_within_session(State) of
-        true  -> {session, State};
-        false -> {no_session, State}
+        true  ->
+            {session, State, []};
+        false ->
+            case is_in_mock_seq_scenario(State) of
+                true ->
+                    %% no enqueued session, but in a mock sequence
+                    Time = application:get_env(?MODULE, mock_seq_timeout, 100),
+                    Action = {state_timeout, Time, start_session_expired, []},
+                    {await_next_session, State, [Action]};
+                false ->
+                    {no_session, State, []}
+            end
     end.
+
+i_end_session_force_restore_mods(State) ->
+    i_end_session(State#state{scenario=undefined}).
 
 register_call(MFA, State0) ->
     State1 = store_call(MFA, State0),
@@ -1381,6 +1474,35 @@ mk_args(N) ->
 mk_arg(N) ->
     erl_syntax:variable(list_to_atom("A"++integer_to_list(N))).
 
+restore_mods_unless_in_mock_seq_scenario(#state{init_modinfos=Modinfos,
+                                                scenario=Scenario}=State) ->
+    case Scenario of
+        #mock_seq{} ->
+            case is_last_session_in_mock_seq(Scenario) of
+                true ->
+                    restore_mods(Modinfos),
+                    State#state{mock_mfas=[], init_modinfos=[],
+                                scenario=undefined};
+                false ->
+                    %% Don't restore mockings, the next session to start soon
+                    %% will likely need them again.
+                    State
+            end;
+        undefined ->
+            restore_mods(Modinfos),
+            State#state{mock_mfas=[], init_modinfos=[], scenario=undefined}
+    end.
+
+is_in_mock_seq_scenario(#state{scenario=#mock_seq{}}) -> true;
+is_in_mock_seq_scenario(#state{scenario=_})           -> false.
+
+is_last_session_in_mock_seq(#mock_seq{num_sessions=NumSessions,
+                                      current_session=Curr}) ->
+    Curr =:= NumSessions.
+
+get_mocking_sequence_opt(MockOpts) ->
+    proplists:get_value(mock_sequence, MockOpts).
+
 restore_mods(Modinfos) ->
     %% To speed things up for next session (commonly next eunit test),
     %% reload the original module instead of unloading, if possible.
@@ -1650,4 +1772,3 @@ unwrap({error, Class, Reason, InnerStack}) ->
     catch ?with_stacktrace(error, just_to_get_a_stack,OuterStack)
              erlang:raise(Class, Reason, InnerStack ++ OuterStack)
     end.
-
