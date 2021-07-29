@@ -43,12 +43,32 @@ called by the fun.
        ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout),
        ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
                           Tests),
+       ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
+                          Tests, MockOpts),
 ```
 
 This is an easy way of using mocks from within eunit tests and is
 mock-specific version of the `?WITH_SETUP` macro.  See the docs
 for the `?WITH_SETUP` macro in the `eunit_addons` project for more
 information on parameters and settings.
+
+<h5><a name="Mock_options">Mock options</a></h5>
+
+One mock option, a `mock_sequence` option, is set by default, to
+speed up setting up of mockings between tests in a `?WITH_MOCKED_SETUP`,
+by retaining them between such tests. In case this would be suspected
+to cause problems, there is an option to turn this off:
+
+
+
+<dt><code>no_mock_sequence</code></dt>
+
+
+
+
+<dd>To disable the mock_sequence optimization</dd>
+
+
 
 
 #### <a name="Mocking_a_function">Mocking a function</a> ####

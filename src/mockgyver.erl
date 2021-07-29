@@ -57,11 +57,24 @@
 %%%     ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout),
 %%%     ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
 %%%                        Tests),
+%%%     ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
+%%%                        Tests, MockOpts),
 %%% </pre>
 %%% This is an easy way of using mocks from within eunit tests and is
 %%% mock-specific version of the `?WITH_SETUP' macro.  See the docs
 %%% for the `?WITH_SETUP' macro in the `eunit_addons' project for more
 %%% information on parameters and settings.
+%%%
+%%% ==== Mock options ====
+%%%
+%%% One mock option, a `mock_sequence' option, is set by default, to
+%%% speed up setting up of mockings between tests in a `?WITH_MOCKED_SETUP',
+%%% by retaining them between such tests. In case this would be suspected
+%%% to cause problems, there is an option to turn this off:
+%%% <dl>
+%%%   <dt>`no_mock_sequence'</dt>
+%%%   <dd>To disable the mock_sequence optimization</dd>
+%%% </dl>
 %%%
 %%% === Mocking a function ===
 %%%
@@ -434,6 +447,8 @@
 %%       `num_sessions' and `signature' fields as well as the `MockMFAs'
 %%       be identical. The next call to `exec/4' must occur within
 %%       a short timeframe, or the mockings will be restored.</dd>
+%%   <dt>`no_mock_sequence'</dt>
+%%   <dd>To disable the mock_sequence optimization</dd>
 %% </dl>
 exec(MockMFAs, WatchMFAs, Fun, MockOpts) ->
     ok = ensure_application_started(),
@@ -520,8 +535,9 @@ init({}) ->
 %% @doc State for when no session is yet started
 %% @end
 %%--------------------------------------------------------------------
-no_session({call, From}, {start_session, MockMFAs, WatchMFAs, MockOpts, Pid},
+no_session({call, From}, {start_session, MockMFAs, WatchMFAs, MockOpts0, Pid},
            State0) ->
+    MockOpts = normalize_mock_opts(MockOpts0),
     {Reply, State} = i_start_session(MockMFAs, WatchMFAs, MockOpts, Pid,
                                      State0),
     {next_state, session, State, {reply, From, Reply}};
@@ -533,8 +549,9 @@ no_session(EventType, Event, State) ->
 %% @doc State for when a session has been started
 %% @end
 %%--------------------------------------------------------------------
-session({call, From}, {start_session, MockMFAs, WatchMFAs, MockOpts, Pid},
+session({call, From}, {start_session, MockMFAs, WatchMFAs, MockOpts0, Pid},
         State0) ->
+    MockOpts = normalize_mock_opts(MockOpts0),
     State = enqueue_session({From, MockMFAs, WatchMFAs, MockOpts, Pid},
                             State0),
     {keep_state, State};
@@ -598,8 +615,9 @@ session(EventType, Event, State) ->
 %% @end
 %%--------------------------------------------------------------------
 await_next_session({call, From},
-                   {start_session, MockMFAs, WatchMFAs, MockOpts, Pid},
+                   {start_session, MockMFAs, WatchMFAs, MockOpts0, Pid},
                    State0) ->
+    MockOpts = normalize_mock_opts(MockOpts0),
     {Reply, State} = i_start_session(MockMFAs, WatchMFAs, MockOpts, Pid,
                                      State0),
     {next_state, session, State, {reply, From, Reply}};
@@ -1502,6 +1520,17 @@ is_last_session_in_mock_seq(#mock_seq{num_sessions=NumSessions,
 
 get_mocking_sequence_opt(MockOpts) ->
     proplists:get_value(mock_sequence, MockOpts).
+
+normalize_mock_opts(MockOpts) ->
+    case proplists:get_bool(no_mock_sequence, MockOpts) of
+        true ->
+            lists:filter(fun({mock_sequence, _}) -> false;
+                            (_OtherOpt) -> true
+                         end,
+                         MockOpts);
+        false ->
+            MockOpts
+    end.
 
 restore_mods(Modinfos) ->
     %% To speed things up for next session (commonly next eunit test),

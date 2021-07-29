@@ -628,6 +628,26 @@ signature_changes_mid_mock_sequence_aux() ->
           [{mock_sequence, #{num_sessions => 1, index => 1, signature => y}}]),
     ok.
 
+no_mock_sequence_opt_test_() ->
+    {timeout, ?PER_TC_TIMEOUT, fun no_mock_sequence_opt_aux/0}.
+
+no_mock_sequence_opt_aux() ->
+    create_dummy(mockgyver_dummya, a),
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummya:a(A) -> A + 1),
+                  2 = mockgyver_dummya:a(1)
+          end,
+          [no_mock_sequence,
+           {mock_sequence, #{num_sessions => 2, index => 1, signature => w}}]),
+    %% It should not be mocked between sessions due to no_mock_sequence
+    1 = mockgyver_dummya:a(1),
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummya:a(A) -> A + 1),
+                  2 = mockgyver_dummya:a(1)
+          end,
+          [no_mock_sequence,
+           {mock_sequence, #{num_sessions => 2, index => 2, signature => w}}]).
+
 await_state(StateName, N) ->
     case sys:get_state(mockgyver) of
         {StateName, _StateData} ->
