@@ -1,10 +1,11 @@
-{"1.1.0",
-[{<<"eunit_addons">>,{pkg,<<"eunit_addons">>,<<"1.0.1">>},0},
- {<<"parse_trans">>,
-  {git,"https://github.com/uwiger/parse_trans.git",
-       {ref,"64b9b77ac57710c2da77a7b3b17664b11474e429"}},
-  0}]}.
+{"1.2.0",
+[{<<"eunit_addons">>,{pkg,<<"eunit_addons">>,<<"1.2.0">>},0},
+ {<<"parse_trans">>,{pkg,<<"parse_trans">>,<<"3.4.1">>},0}]}.
 [
 {pkg_hash,[
- {<<"eunit_addons">>, <<"8307927DF98CDEC317847336CC05E8EBE29604870AF0EF11B902921CC4D783E6">>}]}
+ {<<"eunit_addons">>, <<"A9987E7CC3BC372809A2B8F90807BD863A84DBF1550672E8F2919FBE81C2227B">>},
+ {<<"parse_trans">>, <<"6E6AA8167CB44CC8F39441D05193BE6E6F4E7C2946CB2759F015F8C56B76E5FF">>}]},
+{pkg_hash_ext,[
+ {<<"eunit_addons">>, <<"C28C8C72F4BE61D45F59801E1CAC7D810AB1A8F8C6F3B96648E8C422C1ADBF2A">>},
+ {<<"parse_trans">>, <<"620A406CE75DADA827B82E453C19CF06776BE266F5A67CFF34E1EF2CBB60E49A">>}]}
 ].
