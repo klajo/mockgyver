@@ -648,6 +648,32 @@ no_mock_sequence_opt_aux() ->
           [no_mock_sequence,
            {mock_sequence, #{num_sessions => 2, index => 2, signature => w}}]).
 
+renamed_gets_called_when_mocked_mod_called_between_sessions_test_() ->
+    {timeout, ?PER_TC_TIMEOUT,
+     fun renamed_gets_called_when_mocked_mod_called_between_sessions_aux/0}.
+
+renamed_gets_called_when_mocked_mod_called_between_sessions_aux() ->
+    with_tmp_app_env(
+      mock_sequence_timeout, ?PER_TC_TIMEOUT * 1000,
+      fun renamed_gets_called_when_mocked_mod_called_between_sessions_aux2/0).
+
+renamed_gets_called_when_mocked_mod_called_between_sessions_aux2() ->
+    create_dummy(mockgyver_dummyb, a),
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummyb:a(_) -> 11),
+                  11 = mockgyver_dummyb:a(1)
+          end,
+          [{mock_sequence, #{num_sessions => 2, index => 1, signature => b}}]),
+    %% Calls to functions in mocked modules should go to the renamed module^
+    %% between sessions
+    1 = mockgyver_dummyb:a(1),
+    ?MOCK(fun() ->
+                  ?WHEN(mockgyver_dummyb:a(_) -> 12),
+                  12 = mockgyver_dummyb:a(1)
+          end,
+          [{mock_sequence, #{num_sessions => 2, index => 2, signature => b}}]),
+    ok.
+
 await_state(StateName, N) ->
     case sys:get_state(mockgyver) of
         {StateName, _StateData} ->

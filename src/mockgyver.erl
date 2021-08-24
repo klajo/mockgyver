@@ -627,6 +627,14 @@ await_next_session(state_timeout, start_session_expired,
     {next_state, no_session, State#state{init_modinfos=[],
                                          mock_mfas=[],
                                          scenario=undefined}};
+await_next_session({call, From}, {reg_call_and_get_action, _MFA},
+                   _State) ->
+    ActionFun = undefined, % trigger it to call the renamed, ie the module^
+    {keep_state_and_data, {reply, From, {ok, ActionFun}}};
+await_next_session({call, From}, {get_action, _MFA},
+                   _State) ->
+    ActionFun = undefined, % trigger it to call the renamed, ie the module^
+    {keep_state_and_data, {reply, From, {ok, ActionFun}}};
 await_next_session(EventType, Event, State) ->
     handle_other(EventType, Event, ?FUNCTION_NAME, State).
 
