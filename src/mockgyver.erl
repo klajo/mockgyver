@@ -333,7 +333,8 @@
 %%%
 %%% This is expands to a term that describes MFAs that are (to be)
 %%% mocked (with ?WHEN) and to be watched or traced (with ?WAS_CALLED
-%%% and similar).
+%%% and similar). It can be used with the start_session or exec
+%%% functions.
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -355,12 +356,19 @@
 -export([verify/2, verify/3]).
 -export([forget_all_calls/0]).
 
+%% Low-level session handling, intended mostly for use from mockgyver.hrl
+-export([start_session/1]).
+-export([end_session/0]).
+-export([start_session_element/0]).
+-export([end_session_element/0]).
+
 %% For test
 -export([check_criteria/2]).
 
 %% state functions
 -export([no_session/3,
-         session/3]).
+         session/3,
+         session_element/3]).
 %% gen_statem callbacks
 -export([init/1,
          callback_mode/0,
@@ -407,6 +415,8 @@
          session_mref :: reference() | undefined,
          %% A queue of session starters who have to wait for their turn
          session_waiters=queue:new() :: queue:queue(),
+         %% Monitor for process which started the session element
+         session_element_mref :: reference() | undefined,
          %% Storage of waiters
          call_waiters=[] :: [#call_waiter{}],
          %% MFAs being mocked
@@ -486,11 +496,27 @@ exec(SessionParams, Fun) ->
     ok = ensure_application_started(),
     try
         case start_session(SessionParams) of
-            ok                 -> Fun();
-            {error, _} = Error -> erlang:error(Error)
+            ok ->
+                exec_session_element(Fun);
+            {error, _} = Error ->
+                erlang:error(Error)
         end
     after
         end_session()
+    end.
+
+%% @private
+-spec exec_session_element(fun(() -> Ret)) -> Ret.
+exec_session_element(Fun) ->
+    try
+        case start_session_element() of
+            ok ->
+                Fun();
+            {error, Error} ->
+                erlang:error({session_element, Error})
+        end
+    after
+        end_session_element()
     end.
 
 %% @private
@@ -539,6 +565,12 @@ start_session({MockMFAs, WatchMFAs}) ->
 end_session() ->
     sync_send_event(end_session).
 
+start_session_element() ->
+    sync_send_event({start_session_element, self()}).
+
+end_session_element() ->
+    sync_send_event(end_session_element).
+
 %% @private
 -spec verify(MFA :: mfa(), Op :: verify_op()) -> [list()].
 verify({M, F, A}, Op) ->
@@ -559,6 +591,21 @@ forget_all_calls() ->
 %%%===================================================================
 %%% gen_statem callbacks
 %%%===================================================================
+
+%% The state machine and its transitions works like this:
+%%
+%%       +-------------+  A  +---------+  C  +-----------------+
+%% init  |             |---->|         |---->|                 |
+%% ----->|  no_session |     | session |     | session_element |
+%%       |             |<----|         |<----|                 |
+%%       +-------------+  B  +---------+  D  +-----------------+
+%%
+%% On A: Setup module mockings
+%% On B: Restore mocked module
+%% On C: Setup call tracing and recording of called modules
+%% On D: Clear call tracing and clear any mockings set with ?WHEN()
+%%
+%% Each eunit tests is intended to execute in a session element of its own.
 
 %% @private
 %% @doc state_functions means StateName/3
@@ -608,20 +655,43 @@ session({call, From}, {start_session, MockMFAs, WatchMFAs, Pid}, State0) ->
 session({call, From}, end_session, State0) ->
     {NextStateName, State1} = i_end_session_and_possibly_dequeue(State0),
     {next_state, NextStateName, State1, {reply, From, ok}};
-session({call, From}, {reg_call_and_get_action, MFA}, State0) ->
+session({call, From}, {start_session_element, Pid}, State0) ->
+    {Reply, State} = i_start_session_element(Pid, State0),
+    {next_state, session_element, State, {reply, From, Reply}};
+session({call, From}, {reg_call_and_get_action, _MFA}, _State) ->
+    {keep_state_and_data, {reply, From, {ok, undefined}}};
+session({call, From}, {get_action, _MFA}, _State) ->
+    {keep_state_and_data, {reply, From, {ok, undefined}}};
+session(EventType, Event, State) ->
+    handle_other(EventType, Event, ?FUNCTION_NAME, State).
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc State for an element of a session
+%% @end
+%%--------------------------------------------------------------------
+
+session_element({call, From}, end_session_element, State0) ->
+    State1 = i_end_session_element(State0),
+    {next_state, session, State1, {reply, From, ok}};
+session_element({call, From}, {reg_call_and_get_action, MFA}, State0) ->
     State = register_call(MFA, State0),
     ActionFun = i_get_action(MFA, State),
     {keep_state, State, {reply, From, {ok, ActionFun}}};
-session({call, From}, {get_action, MFA}, State) ->
+session_element({call, From}, {get_action, MFA}, State) ->
     ActionFun = i_get_action(MFA, State),
     {keep_state_and_data, {reply, From, {ok, ActionFun}}};
-session({call, From}, {set_action, MFA, Opts}, State0) ->
+session_element({call, From}, {set_action, MFA, Opts}, State0) ->
     {Reply, State} = i_set_action(MFA, Opts, State0),
     {keep_state, State, {reply, From, Reply}};
-session({call, From}, {verify, MFA, {was_called, Criteria}, Opts}, State) ->
+session_element({call, From},
+                {verify, MFA, {was_called, Criteria}, Opts},
+                State) ->
     Reply = get_and_check_matches(MFA, Criteria, State),
     {keep_state_and_data, {reply, From, possibly_add_location(Reply, Opts)}};
-session({call, From}, {verify, MFA, {wait_called, Criteria}, Opts}, State) ->
+session_element({call, From},
+                {verify, MFA, {wait_called, Criteria}, Opts},
+                State) ->
     case get_and_check_matches(MFA, Criteria, State) of
         {ok, _} = Reply ->
             {keep_state_and_data, {reply, From, Reply}};
@@ -639,21 +709,21 @@ session({call, From}, {verify, MFA, {wait_called, Criteria}, Opts}, State) ->
             Reply = possibly_add_location(Error, Opts),
             {keep_state_and_data, {reply, From, Reply}}
     end;
-session({call, From}, {verify, MFA, num_calls, _Opts}, State) ->
+session_element({call, From}, {verify, MFA, num_calls, _Opts}, State) ->
     Matches = get_matches(MFA, State),
     {keep_state_and_data, {reply, From, {ok, length(Matches)}}};
-session({call, From}, {verify, MFA, get_calls, _Opts}, State) ->
+session_element({call, From}, {verify, MFA, get_calls, _Opts}, State) ->
     Matches = get_matches(MFA, State),
     {keep_state_and_data, {reply, From, {ok, Matches}}};
-session({call, From}, {verify, MFA, forget_when, _Opts}, State0) ->
+session_element({call, From}, {verify, MFA, forget_when, _Opts}, State0) ->
     State = i_forget_action(MFA, State0),
     {keep_state, State, {reply, From, ok}};
-session({call, From}, {verify, MFA, forget_calls, _Opts}, State0) ->
+session_element({call, From}, {verify, MFA, forget_calls, _Opts}, State0) ->
     State = remove_matching_calls(MFA, State0),
     {keep_state, State, {reply, From, ok}};
-session({call, From}, forget_all_calls, State) ->
+session_element({call, From}, forget_all_calls, State) ->
     {keep_state, State#state{calls=[]}, {reply, From, ok}};
-session(EventType, Event, State) ->
+session_element(EventType, Event, State) ->
     handle_other(EventType, Event, ?FUNCTION_NAME, State).
 
 %%--------------------------------------------------------------------
@@ -662,20 +732,33 @@ handle_other({call, From}, stop, _StateName, _State) ->
     {stop_and_reply, normal, {reply, From, ok}};
 handle_other({call, From}, _Other, no_session, _State) ->
     {keep_state_and_data, {reply, From, {error, mocking_not_started}}};
+handle_other({call, From}, _Other, session, _State) ->
+    {keep_state_and_data, {reply, From, {error, mocking_not_started}}};
 handle_other({call, From}, Req, _StateName, _State) ->
     {keep_state_and_data, {reply, From, {error, {invalid_request, Req}}}};
-handle_other(info, #'DOWN'{mref=MRef}, _StateName,
-             #state{session_mref=MRef,
+handle_other(info, #'DOWN'{mref=MRef}, StateName,
+             #state{session_mref=SnMRef,
+                    session_element_mref=ElemMRef,
                     call_waiters=Waiters,
-                    calls=Calls}=State0) ->
+                    calls=Calls}=State0) when MRef == SnMRef;
+                                              MRef == ElemMRef ->
     %% The test died before it got a chance to clean up after itself.
     %% Check whether there are any pending waiters.  If so, just print
     %% the calls we've logged so far.  Hopefully that helps in
     %% debugging.  This is probably the best we can accomplish -- being
     %% able to fail the eunit test would be nice.  Another day perhaps.
-    possibly_print_call_waiters(Waiters, Calls),
-    {NextStateName, State1} = i_end_session_and_possibly_dequeue(State0),
-    {next_state, NextStateName, State1};
+    {NextStateName, State} =
+        if MRef == ElemMRef, StateName == session_element ->
+                possibly_print_call_waiters(Waiters, Calls),
+                {session, i_end_session_element(State0)};
+           MRef == SnMRef, StateName == session ->
+                i_end_session_and_possibly_dequeue(State0);
+           MRef == SnMRef, StateName == session_element ->
+                possibly_print_call_waiters(Waiters, Calls),
+                State1 = i_end_session_element(State0),
+                i_end_session_and_possibly_dequeue(State1)
+        end,
+    {next_state, NextStateName, State};
 handle_other(info, {trace, _, call, MFA}, _StateName, State0) ->
     State = register_call(MFA, State0),
     {keep_state, State};
@@ -876,25 +959,40 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 
 sync_send_event(Msg) ->
+    ensure_server_started(),
     gen_statem:call(?SERVER, Msg).
+
+ensure_server_started() ->
+    case whereis(?SERVER) of
+        undefined ->
+            ok = ensure_application_started();
+        P when is_pid(P) ->
+            ok
+    end.
 
 i_start_session(MockMFAs, WatchMFAs, Pid, State0) ->
     State1 = State0#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs},
-    MockMods = get_unique_mods_by_mfas(MockMFAs),
     Modinfos = mock_and_load_mods(MockMFAs),
     State = State1#state{init_modinfos=Modinfos},
+    MRef = erlang:monitor(process, Pid),
+    {ok, State#state{session_mref=MRef}}.
+
+i_start_session_element(Pid,
+                        #state{mock_mfas=MockMFAs,
+                               watch_mfas=WatchMFAs}=State) ->
     possibly_shutdown_old_tracer(),
     erlang:trace(all, true, [call, {tracer, self()}]),
     %% We mustn't trace non-mocked modules, since we'll register
     %% calls for those as part of reg_call_and_get_action.  If we
     %% did, we'd get double the amount of calls.
+    MockMods = get_unique_mods_by_mfas(MockMFAs),
     TraceMFAs = get_trace_mfas(WatchMFAs, MockMods),
     case setup_trace_on_all_mfas(TraceMFAs) of
         ok ->
             MRef = erlang:monitor(process, Pid),
-            {ok, State#state{calls=[], session_mref=MRef}};
+            {ok, State#state{calls=[], session_element_mref=MRef}};
         {error, _}=Error ->
-            {Error, i_end_session(State)}
+            {Error, i_end_session_element(State)}
     end.
 
 possibly_shutdown_old_tracer() ->
@@ -965,18 +1063,25 @@ setup_trace_on_all_mfas(MFAs) ->
 remove_trace_on_all_mfas(MFAs) ->
     [erlang:trace_pattern(MFA, false, [local]) || MFA <- MFAs].
 
-i_end_session(#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs,
-                     session_mref=MRef, init_modinfos=Modinfos} = State) ->
-    MockMods = get_unique_mods_by_mfas(MockMFAs),
-    TraceMFAs = get_trace_mfas(WatchMFAs, MockMods),
-    remove_trace_on_all_mfas(TraceMFAs),
+i_end_session(#state{session_mref=MRef, init_modinfos=Modinfos} = State) ->
     restore_mods(Modinfos),
     erlang:trace(all, false, [call, {tracer, self()}]),
     if MRef =/= undefined -> erlang:demonitor(MRef, [flush]);
        true               -> ok
     end,
-    State#state{actions=[], calls=[], session_mref=undefined, call_waiters=[],
+    State#state{session_mref=undefined,
                 mock_mfas=[], watch_mfas=[], init_modinfos=[]}.
+
+i_end_session_element(#state{mock_mfas=MockMFAs, watch_mfas=WatchMFAs,
+                             session_element_mref=ElemMRef} = State) ->
+    MockMods = get_unique_mods_by_mfas(MockMFAs),
+    TraceMFAs = get_trace_mfas(WatchMFAs, MockMods),
+    remove_trace_on_all_mfas(TraceMFAs),
+    if ElemMRef =/= undefined -> erlang:demonitor(ElemMRef, [flush]);
+       true                   -> ok
+    end,
+    State#state{actions=[], calls=[], call_waiters=[],
+                session_element_mref=undefined}.
 
 i_end_session_and_possibly_dequeue(State0) ->
     State1 = i_end_session(State0),

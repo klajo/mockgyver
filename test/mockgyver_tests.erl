@@ -100,14 +100,56 @@ check_no_simultaneous_mockers_outside([]) ->
 check_no_simultaneous_mockers_inside([{mock_end, Pid} | Msgs], Pid) ->
     check_no_simultaneous_mockers_outside(Msgs).
 
-can_test_again_after_session_dies_test_() ->
-    {timeout, ?PER_TC_TIMEOUT, fun can_test_again_after_session_dies_aux/0}.
+can_test_again_after_mocking_dies_test_() ->
+    {timeout, ?PER_TC_TIMEOUT, fun can_test_again_after_mocking_dies_aux/0}.
 
-can_test_again_after_session_dies_aux() ->
+can_test_again_after_mocking_dies_aux() ->
     P1 = proc_lib:spawn(fun() -> ?MOCK(fun() -> crash_me_via_process_link() end)
                         end),
     M1 = monitor(process, P1),
     ?recv(#'DOWN'{mref=M1} -> ok),
+    ?MOCK(fun() -> ok end),
+    ok.
+
+can_test_again_after_session_dies_test_() ->
+    {timeout, ?PER_TC_TIMEOUT, fun can_test_again_after_session_dies_aux/0}.
+
+can_test_again_after_session_dies_aux() ->
+    P1 = proc_lib:spawn(
+           fun() ->
+                   ok = mockgyver:start_session({[], []}),
+                   crash_me_via_process_link()
+           end),
+    M1 = monitor(process, P1),
+    ?recv(#'DOWN'{mref=M1, info=Reason} ->
+                 if Reason == normal -> ok;
+                    Reason == shutdown -> ok;
+                    true -> error({helper_crashed, Reason})
+                 end),
+    ?MOCK(fun() -> ok end),
+    ok.
+
+can_test_again_after_session_elem_dies_test_() ->
+    {timeout, ?PER_TC_TIMEOUT,
+     fun can_test_again_after_session_elem_dies_aux/0}.
+
+can_test_again_after_session_elem_dies_aux() ->
+    P1 = proc_lib:spawn(
+           fun() ->
+                   ok = mockgyver:start_session({[], []}),
+                   P2 = proc_lib:spawn(
+                          fun() ->
+                                  ok = mockgyver:start_session_element(),
+                                  crash_me_via_process_link()
+                          end),
+                   M2 = monitor(process, P2),
+                   ?recv(#'DOWN'{mref=M2} -> ok)
+           end),
+    M1 = monitor(process, P1),
+    ?recv(#'DOWN'{mref=M1, info=Reason} ->
+                 if Reason == normal -> ok;
+                    true -> error({helper_crashed, Reason})
+                 end),
     ?MOCK(fun() -> ok end),
     ok.
 
@@ -514,6 +556,101 @@ can_mock_a_module_with_on_load_aux() ->
                   mocked = mockgyver_dummy3:x(),
                   abc123 = mockgyver_dummy3:z(abc123)
           end).
+
+two_sessions_with_elements_test_() ->
+    {timeout, ?PER_TC_TIMEOUT, fun two_sessions_with_elements_aux/0}.
+
+two_sessions_with_elements_aux() ->
+    %% This imitates two ?WITH_MOCKED_SETUP after each other.
+    create_dummy(mockgyver_dummy5, a),
+    create_dummy(mockgyver_dummy6, a),
+    UnmockedChecksum5 = mockgyver_dummy5:module_info(md5),
+    ok = mockgyver:start_session(?MOCK_SESSION_PARAMS),
+
+    ok = mockgyver:start_session_element(),
+    ?WHEN(mockgyver_dummy5:a(_) -> mocked_1_1),
+    mocked_1_1 = mockgyver_dummy5:a(1),
+    ok = mockgyver:end_session_element(),
+
+    %% It should stay mocked across session elements in a session,
+    %% that's the optimizaion. Can't call it to test it though---that
+    %% would require a session element---so test it in another way.
+    ?assertNotEqual(UnmockedChecksum5, mockgyver_dummy5:module_info(md5)),
+
+    ok = mockgyver:start_session_element(),
+    %% The ?WHEN from previous ?MOCK in the mock sueqence
+    %% should not initially be active:
+    1 = mockgyver_dummy5:a(1),
+    %% But it should still be possible to mock it again:
+    ?WHEN(mockgyver_dummy5:a(_) -> mocked_1_2),
+    mocked_1_2 = mockgyver_dummy5:a(1),
+    ok = mockgyver:end_session_element(),
+
+    ok = mockgyver:end_session(),
+
+    %% It should get restored after the last session in the sequence
+    ?assertEqual(UnmockedChecksum5, mockgyver_dummy5:module_info(md5)),
+    1 = mockgyver_dummy5:a(1),
+
+    %% Next session
+    ok = mockgyver:start_session(?MOCK_SESSION_PARAMS),
+
+    ok = mockgyver:start_session_element(),
+    ?WHEN(mockgyver_dummy6:a(_) -> mocked_2_1),
+    not_mocked = mockgyver_dummy5:a(not_mocked),
+    mocked_2_1 = mockgyver_dummy6:a(1),
+    ok = mockgyver:end_session_element(),
+
+    ok = mockgyver:start_session_element(),
+    ?WHEN(mockgyver_dummy6:a(_) -> mocked_2_2),
+    not_mocked = mockgyver_dummy5:a(not_mocked),
+    mocked_2_2 = mockgyver_dummy6:a(1),
+    ok = mockgyver:end_session_element(),
+
+    ok = mockgyver:end_session(),
+    ok.
+
+renamed_gets_called_when_mocked_mod_called_between_session_elems_test_() ->
+    {timeout, ?PER_TC_TIMEOUT,
+     fun renamed_gets_called_when_mocked_mod_called_between_sn_elems_aux/0}.
+
+renamed_gets_called_when_mocked_mod_called_between_sn_elems_aux() ->
+    with_tmp_app_env(
+      mock_sequence_timeout, ?PER_TC_TIMEOUT * 1000,
+      fun renamed_gets_called_when_mocked_mod_called_between_sn_elems_aux2/0).
+
+renamed_gets_called_when_mocked_mod_called_between_sn_elems_aux2() ->
+    create_dummy(mockgyver_dummyb, a),
+
+    ok = mockgyver:start_session(?MOCK_SESSION_PARAMS),
+    ok = mockgyver:start_session_element(),
+    ?WHEN(mockgyver_dummyb:a(_) -> 11),
+    11 = mockgyver_dummyb:a(1),
+    ok = mockgyver:end_session_element(),
+
+    %% Calls to functions in mocked modules should go to the renamed module^
+    %% between sessions
+    1 = mockgyver_dummyb:a(1),
+
+    ok = mockgyver:start_session_element(),
+    ?WHEN(mockgyver_dummyb:a(_) -> 12),
+    12 = mockgyver_dummyb:a(1),
+    ok = mockgyver:end_session_element(),
+
+    ok = mockgyver:end_session(),
+    ok.
+
+with_tmp_app_env(Var, Val, F) ->
+    Orig = application:get_env(mockgyver, Var),
+    application:set_env(mockgyver, Var, Val),
+    try F()
+    after
+        %% Make sure the temporary timeout is restored:
+        case Orig of
+            undefined     -> application:unset_env(mockgyver, Var);
+            {ok, OrigVal} -> application:set_env(mockgyver, Var, OrigVal)
+        end
+    end.
 
 create_dummy(Mod, Func) ->
     Dir = test_dir(),
