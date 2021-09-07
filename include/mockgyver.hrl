@@ -30,8 +30,13 @@
         ?WITH_MOCKED_SETUP(SetupFun, CleanupFun,
                            ?FOR_ALL_TIMEOUT, ?PER_TC_TIMEOUT)).
 
+-define(WRAP(Type),
+        {'$mock', Type, {?FILE, ?LINE}}).
+
 -define(WRAP(Type, Expr),
         {'$mock', Type, Expr, {?FILE, ?LINE}}).
+
+-define(MOCK_SESSION_PARAMS, ?WRAP(m_session_params)).
 
 -define(MOCK(Expr), ?WRAP(m_init, (Expr))).
 

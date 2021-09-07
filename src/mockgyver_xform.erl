@@ -51,6 +51,7 @@
 -export([parse_transform/2]).
 
 %% Records
+-record(m_session_params, {loc}).
 -record(m_init, {exec_fun, loc}).
 -record(m_when, {m, f, a, action, loc}).
 -record(m_verify, {m, f, a, g, crit, loc}).
@@ -72,10 +73,34 @@ parse_transform(Forms, Opts) ->
 parse_transform_2(Forms0, Ctxt) ->
     Env = #env{mock_mfas  = find_mfas_to_mock(Forms0, Ctxt),
                trace_mfas = find_mfas_to_trace(Forms0, Ctxt)},
-    {Forms1, _} = rewrite_init_stmts(Forms0, Ctxt, Env),
-    {Forms2, _} = rewrite_when_stmts(Forms1, Ctxt),
-    {Forms, _}  = rewrite_verify_stmts(Forms2, Ctxt),
+    {Forms1, _} = rewrite_session_params_stmts(Forms0, Ctxt, Env),
+    {Forms2, _} = rewrite_init_stmts(Forms1, Ctxt, Env),
+    {Forms3, _} = rewrite_when_stmts(Forms2, Ctxt),
+    {Forms, _}  = rewrite_verify_stmts(Forms3, Ctxt),
     parse_trans:revert(Forms).
+
+%%------------------------------------------------------------
+%% session_params statements
+%%------------------------------------------------------------
+rewrite_session_params_stmts(Forms, Ctxt, Env) ->
+    parse_trans:do_transform(fun rewrite_session_params_stmts_2/4,
+                             Env, Forms, Ctxt).
+
+rewrite_session_params_stmts_2(Type, Form0, _Ctxt, Env) ->
+    case is_mock_expr(Type, Form0) of
+        {true, #m_session_params{}} ->
+            Befores = [],
+            MockMfas = Env#env.mock_mfas,
+            TraceMfas = Env#env.trace_mfas,
+            [Form] = codegen:exprs(
+                       fun() ->
+                               {{'$var',  MockMfas}, {'$var',  TraceMfas}}
+                       end),
+            Afters = [],
+            {Befores, Form, Afters, false, Env};
+        _ ->
+            {Form0, true, Env}
+    end.
 
 %%------------------------------------------------------------
 %% init statements
@@ -199,10 +224,14 @@ is_mock_expr(_Type, _Form) ->
 
 analyze_mock_form(Info, Location) ->
     case Info of
-        {m_init, [Expr]}   -> analyze_init_expr(Expr, Location);
-        {m_when, [Expr]}   -> analyze_when_expr(Expr, Location);
-        {m_verify, [Expr]} -> analyze_verify_expr(Expr, Location)
+        {m_session_params, []} -> analyze_session_params_expr(Location);
+        {m_init, [Expr]}       -> analyze_init_expr(Expr, Location);
+        {m_when, [Expr]}       -> analyze_when_expr(Expr, Location);
+        {m_verify, [Expr]}     -> analyze_verify_expr(Expr, Location)
     end.
+
+analyze_session_params_expr(Location) ->
+    #m_session_params{loc=Location}.
 
 analyze_init_expr(Expr, Location) ->
     #m_init{exec_fun=Expr, loc=Location}.
