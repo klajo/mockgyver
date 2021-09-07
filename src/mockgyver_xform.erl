@@ -182,8 +182,14 @@ is_mock_expr(tuple, Form) ->
     case erl_syntax:tuple_elements(Form) of
         [H | T] ->
             case erl_syntax:is_atom(H, '$mock') of
-                true  -> {true, analyze_mock_form(T)};
-                false -> false
+                true  ->
+                    [TypeTree | Rest] = T,
+                    Type = erl_syntax:atom_value(TypeTree),
+                    MockInfo = {Type, lists:droplast(Rest)},
+                    Location = erl_syntax:concrete(lists:last(Rest)),
+                    {true, analyze_mock_form(MockInfo, Location)};
+                false ->
+                    false
             end;
         _Other ->
             false
@@ -191,12 +197,11 @@ is_mock_expr(tuple, Form) ->
 is_mock_expr(_Type, _Form) ->
     false.
 
-analyze_mock_form([Type, Expr, Location0]) ->
-    Location = erl_syntax:concrete(Location0),
-    case erl_syntax:atom_value(Type) of
-        m_init   -> analyze_init_expr(Expr, Location);
-        m_when   -> analyze_when_expr(Expr, Location);
-        m_verify -> analyze_verify_expr(Expr, Location)
+analyze_mock_form(Info, Location) ->
+    case Info of
+        {m_init, [Expr]}   -> analyze_init_expr(Expr, Location);
+        {m_when, [Expr]}   -> analyze_when_expr(Expr, Location);
+        {m_verify, [Expr]} -> analyze_verify_expr(Expr, Location)
     end.
 
 analyze_init_expr(Expr, Location) ->
