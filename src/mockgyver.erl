@@ -605,7 +605,8 @@ forget_all_calls() ->
 %% On C: Setup call tracing and recording of called modules
 %% On D: Clear call tracing and clear any mockings set with ?WHEN()
 %%
-%% Each eunit tests is intended to execute in a session element of its own.
+%% Each eunit tests is intended to execute in a session element of its own,
+%% and a ?WITH_MOCKED_SETUP() starts and ends a session.
 
 %% @private
 %% @doc state_functions means StateName/3
