@@ -8,19 +8,31 @@
 %% run tests with a mock
 -define(WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
                           Tests),
-        ?WITH_FUN(fun(__MockTest) ->
-                          ?MOCK(fun() ->
-                                        Env = SetupFun(),
-                                        try
-                                            apply(?MODULE, __MockTest, [Env])
-                                        after
-                                            CleanupFun(Env)
-                                        end
-                                end)
-                  end,
-                  ForAllTimeout,
-                  PerTcTimeout,
-                  Tests)).
+        {timeout, ForAllTimeout,
+         {setup,
+          fun() -> mockgyver:start_session(?MOCK_SESSION_PARAMS) end,
+          fun(_) -> mockgyver:end_session() end,
+          [{timeout, PerTcTimeout,          % timeout for each test
+            {spawn,
+             {atom_to_list(__Test),         % label per test
+              fun() ->
+                      try
+                          case mockgyver:start_session_element() of
+                              ok ->
+                                  Env = SetupFun(),
+                                  try
+                                      apply(?MODULE, __Test, [Env])
+                                  after
+                                      CleanupFun(Env)
+                                  end;
+                              {error, Reason} ->
+                                  error({mockgyver_session_elem_fail, Reason})
+                          end
+                      after
+                          mockgyver:end_session_element()
+                      end
+              end}}}
+           || __Test <- Tests]}}).
 
 -define(WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout),
         ?WITH_MOCKED_SETUP(SetupFun, CleanupFun, ForAllTimeout, PerTcTimeout,
