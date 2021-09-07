@@ -339,7 +339,7 @@
 -compile({parse_transform, parse_trans_codegen}).
 
 %% API
--export([exec/3]).
+-export([exec/2]).
 
 -export([start_link/0]).
 -export([stop/0]).
@@ -455,6 +455,9 @@
 
 -type state_name() :: no_session | session.
 
+-type session_params() :: {Mocked::[mfa()], Watched::[mfa()]}.
+                                                % see ?MOCK_SESSION_PARAMS
+
 -ifdef(OTP_RELEASE).
 %% The stack trace syntax introduced in Erlang 21 coincided
 %% with the introduction of the predefined macro OTP_RELEASE.
@@ -471,11 +474,11 @@
 %%%===================================================================
 
 %% @private
--spec exec(MockMFAs :: [mfa()], WatchMFAs :: [mfa()], fun(() -> Ret)) -> Ret.
-exec(MockMFAs, WatchMFAs, Fun) ->
+-spec exec(session_params(), fun(() -> Ret)) -> Ret.
+exec(SessionParams, Fun) ->
     ok = ensure_application_started(),
     try
-        case start_session(MockMFAs, WatchMFAs) of
+        case start_session(SessionParams) of
             ok                 -> Fun();
             {error, _} = Error -> erlang:error(Error)
         end
@@ -521,9 +524,8 @@ ensure_application_started() ->
         {error, _} = Error            -> Error
     end.
 
--spec start_session(MockMFAs :: [mfa()], WatchMFAs :: [mfa()]) ->
-                           ok | {error, Reason :: term()}.
-start_session(MockMFAs, WatchMFAs) ->
+-spec start_session(session_params()) -> ok | {error, Reason::term()}.
+start_session({MockMFAs, WatchMFAs}) ->
     sync_send_event({start_session, MockMFAs, WatchMFAs, self()}).
 
 -spec end_session() -> ok.

@@ -91,8 +91,8 @@ rewrite_init_stmts_2(Type, Form0, _Ctxt, Env) ->
             TraceMfas = Env#env.trace_mfas,
             [Form] = codegen:exprs(
                        fun() ->
-                               mockgyver:exec({'$var',  MockMfas},
-                                              {'$var',  TraceMfas},
+                               mockgyver:exec({{'$var',  MockMfas},
+                                               {'$var',  TraceMfas}},
                                               {'$form', ExecFun})
                        end),
             Afters = [],
