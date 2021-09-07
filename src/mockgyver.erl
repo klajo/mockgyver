@@ -328,6 +328,13 @@
 %%%     ?WAS_CALLED(lists:nth(2, [d, e, f]), never),
 %%%     ?WAS_CALLED(lists:nth(3, [g, h, i]), never),
 %%% </pre>
+%%%
+%%% %%% ==== ?MOCK_SESSION_PARAMS ====
+%%%
+%%% This is expands to a term that describes MFAs that are (to be)
+%%% mocked (with ?WHEN) and to be watched or traced (with ?WAS_CALLED
+%%% and similar).
+%%%
 %%% @end
 %%%-------------------------------------------------------------------
 -module(mockgyver).
