@@ -57,10 +57,9 @@
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the supervisor
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
+-spec start_link() -> supervisor:start_link_ret().
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
@@ -75,12 +74,11 @@ start_link() ->
 %% this function is called by the new process to find out about
 %% restart strategy, maximum restart frequency and child
 %% specifications.
-%%
-%% @spec init(Args) -> {ok, {SupFlags, [ChildSpec]}} |
-%%                     ignore |
-%%                     {error, Reason}
 %% @end
 %%--------------------------------------------------------------------
+-spec init(Args :: term()) -> {ok, {supervisor:sup_flags(),
+                                    [supervisor:child_spec()]}} |
+                              ignore.
 init([]) ->
     Child = {mockgyver, {mockgyver, start_link, []},
              permanent, 10000, worker, [mockgyver]},

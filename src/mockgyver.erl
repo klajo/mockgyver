@@ -367,16 +367,54 @@
 
 -define(cand_resem_threshold, 5). %% threshold for similarity (0 = identical)
 
--record(state, {actions=[], calls, session_mref, session_waiters=queue:new(),
-                call_waiters=[], mock_mfas=[], watch_mfas=[],
-                %% For restoring loaded modules during session_end:
-                init_modinfos=[]}).
--record(call, {m, f, a}).
--record(action, {mfa, func}).
--record(call_waiter, {from, mfa, crit, loc}).
+-record(call,
+        %% holds information on a called MFA (used in eg. error messages)
+        {m :: module(),
+         f :: atom(),
+         a :: args()}).
+
+-record(action,
+        %% holds information on what will happen when an MFA is called (?WHEN)
+        {%% MFA that needs to be called for the func to be run
+         mfa :: mfa(),
+         %% Fun to run when the MFA is called
+         func :: function()}).
+
+-record(call_waiter,
+        %% holds information when waiting on a call to an MFA (?WAIT_CALLED)
+        {%% A reference to the waiter
+         from :: gen_statem:from(),
+         %% MFA for which the waiter is waiting
+         mfa :: mf_args_expectation(),
+         %% Criteria that shall be fulfilled for the wait to be complete
+         crit :: criteria(),
+         %% A pointer to the location which is waiting (for error messages)
+         loc :: {FIle::string(), Line::integer()}}).
+
+-record(state,
+        {%% Storage of the mocks
+         actions=[] :: [#action{}],
+         %% Storage of calls to the mocks
+         calls :: [#call{}] | undefined,
+         %% Process which started the session
+         session_mref :: reference() | undefined,
+         %% A queue of session starters who have to wait for their turn
+         session_waiters=queue:new() :: queue:queue(),
+         %% Storage of waiters
+         call_waiters=[] :: [#call_waiter{}],
+         %% MFAs being mocked
+         mock_mfas=[] :: [mfa()],
+         %% MFAs being traced
+         watch_mfas=[] :: [mfa()],
+         %% For restoring loaded modules during session_end
+         init_modinfos=[]}).
 
 %-record(trace, {msg}).
--record('DOWN', {mref, type, obj, info}).
+-record('DOWN',
+        {mref :: reference(),
+         type :: atom(),
+         obj :: pid() | port(),
+         info :: term()}).
 
 -define(mocking_key(Mod, Hash), {mocking_mod, Mod, Hash}).
 -record(mocking_mod,
@@ -398,6 +436,25 @@
 
 -type checksum() :: term().
 
+-type criteria() :: once | {at_least, integer()} | {at_most, integer()} | {times, integer()} | never.
+
+-type verify_op() :: {was_called, criteria()} |
+                     {wait_called, criteria()} |
+                     num_calls |
+                     get_calls |
+                     forget_when |
+                     forget_calls.
+
+-type verify_opt() :: {location, {File :: string(), Line :: integer()}}.
+
+-type args() :: [term()].
+
+-type mf_args_expectation() :: {module(), atom(), args_expectation()}.
+
+-type args_expectation() :: function(). % called with actual args to check match
+
+-type state_name() :: no_session | session.
+
 -ifdef(OTP_RELEASE).
 %% The stack trace syntax introduced in Erlang 21 coincided
 %% with the introduction of the predefined macro OTP_RELEASE.
@@ -414,6 +471,7 @@
 %%%===================================================================
 
 %% @private
+-spec exec(MockMFAs :: [mfa()], WatchMFAs :: [mfa()], fun(() -> Ret)) -> Ret.
 exec(MockMFAs, WatchMFAs, Fun) ->
     ok = ensure_application_started(),
     try
@@ -426,29 +484,36 @@ exec(MockMFAs, WatchMFAs, Fun) ->
     end.
 
 %% @private
+-spec reg_call_and_get_action(MFA :: mfa()) -> function().
 reg_call_and_get_action(MFA) ->
     chk(sync_send_event({reg_call_and_get_action, MFA})).
 
 %% @private
+-spec get_action(MFA :: mfa()) -> function().
 get_action(MFA) ->
     chk(sync_send_event({get_action, MFA})).
 
 %% @private
+-spec set_action(MFA :: mfa()) -> ok.
 set_action(MFA) ->
     set_action(MFA, _Opts=[]).
 
 %% @private
+-spec set_action(MFA :: mfa(), Opts :: []) -> ok.
 set_action(MFA, Opts) ->
     chk(sync_send_event({set_action, MFA, Opts})).
 
 %% @private
+-spec start_link() -> gen_statem:start_ret().
 start_link() ->
     gen_statem:start_link({local, ?SERVER}, ?MODULE, {}, []).
 
 %% @private
+-spec stop() -> ok.
 stop() ->
     sync_send_event(stop).
 
+-spec ensure_application_started() -> ok | {error, Reason :: term()}.
 ensure_application_started() ->
     case application:start(?MODULE) of
         ok                            -> ok;
@@ -456,23 +521,29 @@ ensure_application_started() ->
         {error, _} = Error            -> Error
     end.
 
+-spec start_session(MockMFAs :: [mfa()], WatchMFAs :: [mfa()]) ->
+                           ok | {error, Reason :: term()}.
 start_session(MockMFAs, WatchMFAs) ->
     sync_send_event({start_session, MockMFAs, WatchMFAs, self()}).
 
+-spec end_session() -> ok.
 end_session() ->
     sync_send_event(end_session).
 
 %% @private
-%% once | {at_least, N} | {at_most, N} | {times, N} | never
-verify({M, F, A}, Criteria) ->
-    verify({M, F, A}, Criteria, _Opts=[]).
+-spec verify(MFA :: mfa(), Op :: verify_op()) -> [list()].
+verify({M, F, A}, Op) ->
+    verify({M, F, A}, Op, _Opts=[]).
 
 %% @private
-verify({M, F, A}, Criteria, Opts) ->
+-spec verify(MFA :: mfa(), Op :: verify_op(), Opts :: [verify_opt()]) ->
+                    [list()].
+verify({M, F, A}, Op, Opts) ->
     wait_until_trace_delivered(),
-    chk(sync_send_event({verify, {M, F, A}, Criteria, Opts})).
+    chk(sync_send_event({verify, {M, F, A}, Op, Opts})).
 
 %% @private
+-spec forget_all_calls() -> ok.
 forget_all_calls() ->
     chk(sync_send_event(forget_all_calls)).
 
@@ -482,6 +553,7 @@ forget_all_calls() ->
 
 %% @private
 %% @doc state_functions means StateName/3
+-spec callback_mode() -> gen_statem:callback_mode_result().
 callback_mode() ->
     state_functions.
 
@@ -490,6 +562,7 @@ callback_mode() ->
 %% @doc Initialize the state machine
 %% @end
 %%--------------------------------------------------------------------
+-spec init({}) -> gen_statem:init_result(state_name()).
 init({}) ->
     create_mod_cache(),
     {ok, no_session, #state{}}.
@@ -499,6 +572,11 @@ init({}) ->
 %% @doc State for when no session is yet started
 %% @end
 %%--------------------------------------------------------------------
+-spec no_session(EventType :: gen_statem:event_type(),
+                 EventContent :: term(),
+                 State :: #state{}) ->
+                        gen_statem:event_handler_result(
+                          gen_statem:state_name()).
 no_session({call, From}, {start_session, MockMFAs, WatchMFAs, Pid}, State0) ->
     {Reply, State} = i_start_session(MockMFAs, WatchMFAs, Pid, State0),
     {next_state, session, State, {reply, From, Reply}};
@@ -510,6 +588,11 @@ no_session(EventType, Event, State) ->
 %% @doc State for when a session has been started
 %% @end
 %%--------------------------------------------------------------------
+-spec session(EventType :: gen_statem:event_type(),
+              EventContent :: term(),
+              State :: #state{}) ->
+                     gen_statem:event_handler_result(
+                       gen_statem:state_name()).
 session({call, From}, {start_session, MockMFAs, WatchMFAs, Pid}, State0) ->
     State = enqueue_session({From, MockMFAs, WatchMFAs, Pid}, State0),
     {keep_state, State};
@@ -752,10 +835,11 @@ calc_atom_resemblance(A1, A2) ->
 %% terminate. It should be the opposite of Module:init/1 and do any
 %% necessary cleaning up. When it returns, the gen_statem terminates with
 %% Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, StateName, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
+-spec terminate(Reason :: term(),
+                StateName :: gen_statem:state_name(),
+                State :: #state{}) -> term().
 terminate(_Reason, _StateName, State) ->
     i_end_session(State), % ensure mock modules are unloaded when terminating
     destroy_mod_cache(),
@@ -765,11 +849,16 @@ terminate(_Reason, _StateName, State) ->
 %% @private
 %% @doc
 %% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, StateName, State, Extra) ->
-%%                   {ok, StateName, NewState}
 %% @end
 %%--------------------------------------------------------------------
+-spec code_change(OldVsn :: term(),
+                  StateName :: gen_statem:state_name(),
+                  State :: #state{},
+                  Extra :: term()) ->
+                         {ok,
+                          NewStateName :: gen_statem:state_name(),
+                          NewState :: #state{}} |
+                         term().
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
@@ -1581,14 +1670,11 @@ f(Format, Args) ->
 %%     ...
 
 %%--------------------------------------------------------------------
-%% @spec rename(BeamBin0, NewName) -> BeamBin
-%%         BeamBin0 = binary()
-%%         BeamBin = binary()
-%%         NewName = atom()
 %% @doc Rename a module.  `BeamBin0' is a binary containing the
 %% contents of the beam file.
 %% @end
 %%--------------------------------------------------------------------
+-spec rename(BeamBin0 :: binary(), Name :: atom()) -> BeamBin :: binary().
 rename(BeamBin0, Name) ->
     BeamBin = replace_in_atab(BeamBin0, Name),
     update_form_size(BeamBin).

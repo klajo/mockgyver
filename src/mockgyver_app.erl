@@ -57,21 +57,20 @@
 %% application. If the application is structured according to the OTP
 %% design principles as a supervision tree, this means starting the
 %% top supervisor of the tree.
-%%
-%% @spec start(StartType, StartArgs) -> {ok, Pid} |
-%%                                      {ok, Pid, State} |
-%%                                      {error, Reason}
-%%      StartType = normal | {takeover, Node} | {failover, Node}
-%%      StartArgs = term()
 %% @end
 %%--------------------------------------------------------------------
+-spec start(StartType :: application:start_type(),
+            StartArgs :: term()) ->
+                   {ok, pid()} |
+                   {ok, pid(), State :: term()} |
+                   {error, Reason :: term()}.
 start(_StartType, _StartArgs) ->
     case mockgyver_sup:start_link() of
         {ok, _Pid} = OkRes ->
             OkRes;
         Error ->
             Error
-                end.
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -79,10 +78,9 @@ start(_StartType, _StartArgs) ->
 %% This function is called whenever an application has stopped. It
 %% is intended to be the opposite of Module:start/2 and should do
 %% any necessary cleaning up. The return value is ignored.
-%%
-%% @spec stop(State) -> void()
 %% @end
 %%--------------------------------------------------------------------
+-spec stop(State :: term()) -> ok.
 stop(_State) ->
     ok.
 

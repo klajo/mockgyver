@@ -61,6 +61,11 @@
 %%% API
 %%%===================================================================
 
+-spec parse_transform(Forms :: [erl_parse:abstract_form() |
+                                erl_parse:form_info()],
+                      Opts :: [compile:option()]) ->
+                             [erl_parse:abstract_form() |
+                              erl_parse:form_info()].
 parse_transform(Forms, Opts) ->
     parse_trans:top(fun parse_transform_2/2, Forms, Opts).
 
