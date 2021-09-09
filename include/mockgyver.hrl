@@ -38,7 +38,7 @@
 
 -define(MOCK_SESSION_PARAMS, ?WRAP(m_session_params)).
 
--define(MOCK(Expr), ?WRAP(m_init, (Expr))).
+-define(MOCK(Expr), mockgyver:exec(?MOCK_SESSION_PARAMS, (Expr))).
 
 -define(WHEN(Expr), ?WRAP(m_when, case x of Expr end)).
 
