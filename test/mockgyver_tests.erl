@@ -37,13 +37,6 @@
 -include_lib("stdlib/include/ms_transform.hrl").
 -include("../include/mockgyver.hrl").
 
-%% This macro was introduced in Erlang/OTP 19.0.
-%% This is a workaround for older releases.
--ifndef(FUNCTION_NAME).
--define(FUNCTION_NAME,
-        element(2, element(2, process_info(self(), current_function)))).
--endif.
-
 -record('DOWN', {mref, type, obj, info}).
 
 -define(recv(PatternAction), ?recv(PatternAction, 4000)).
