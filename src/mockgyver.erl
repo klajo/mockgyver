@@ -1494,73 +1494,47 @@ ensure_renamed_mod_to_load_aux(RenamedMod, #modinfo{code=Code}) ->
     end.
 
 mk_mocking_mod(Mod, RenamedMod, ExportedFAs) ->
-    mk_mod(Mod, mk_mocking_funcs(Mod, RenamedMod, ExportedFAs)).
-
-mk_mocking_funcs(Mod, RenamedMod, ExportedFAs) ->
-    lists:map(fun(ExportedFA) ->
-                      mk_mocking_func(Mod, RenamedMod, ExportedFA)
-              end,
-              ExportedFAs).
-
-mk_mocking_func(Mod, RenamedMod, {F, A}) ->
-    %% Generate a function like this (mod, func and arguments vary):
-    %%
-    %%     func(A2, A1) ->
-    %%         case mockgyver:reg_call_and_get_action({mod,func,[A2, A1]}) of
-    %%             undefined ->
-    %%                 'mod^':func(A2, A1);
-    %%             ActionFun ->
-    %%                 ActionFun(A2, A1)
-    %%         end.
-    Args = mk_args(A),
-    Body =[erl_syntax:case_expr(
-             mk_call(mockgyver, reg_call_and_get_action,
-                     [erl_syntax:tuple([erl_syntax:abstract(Mod),
-                                        erl_syntax:abstract(F),
-                                        erl_syntax:list(Args)])]),
-             [erl_syntax:clause([erl_syntax:atom(undefined)],
-                                none,
-                                [mk_call(RenamedMod, F, Args)]),
-              erl_syntax:clause([erl_syntax:variable('ActionFun')],
-                                none,
-                                [mk_call('ActionFun', Args)])])],
-    erl_syntax:function(
-      erl_syntax:abstract(F),
-      [erl_syntax:clause(Args, none, Body)]).
+    FmtNoAction =
+        fun(FnName, Args) ->
+                f("apply(~p, ~s, ~s)", [RenamedMod, FnName, Args])
+        end,
+    mk_mod(Mod, [mk_handle_undefined_function(Mod, ExportedFAs, FmtNoAction)]).
 
 mk_new_mod(Mod, ExportedFAs) ->
-    mk_mod(Mod, mk_new_funcs(Mod, ExportedFAs)).
+    FmtNoAction =
+        fun(FnName, Args) ->
+                f("error_handler:raise_undef_exception(~p, ~s, ~s)",
+                  [Mod, FnName, Args])
+        end,
+    mk_mod(Mod, [mk_handle_undefined_function(Mod, ExportedFAs, FmtNoAction)]).
 
-mk_new_funcs(Mod, ExportedFAs) ->
-    lists:map(fun(ExportedFA) -> mk_new_func(Mod, ExportedFA) end,
-              ExportedFAs).
-
-mk_new_func(Mod, {F, A}) ->
-    %% Generate a function like this (mod, func and arguments vary):
+mk_handle_undefined_function(Mod, ExportedFAs, FmtNoAction) ->
+    %% Parsing the string is approx 20% slower than constructing
+    %% the syntax tree using erl_syntax calls.
+    %% The string version is easier to understand though.
     %%
-    %%     func(A2, A1) ->
-    %%         case mockgyver:reg_call_and_get_action({mod,func,[A2, A1]}) of
-    %%             undefined ->
-    %%                 erlang:error(undef); % emulate undefined function
-    %%             ActionFun ->
-    %%                 ActionFun(A2, A1)
-    %%         end.
-    Args = mk_args(A),
-    Body =[erl_syntax:case_expr(
-             mk_call(mockgyver, reg_call_and_get_action,
-                     [erl_syntax:tuple([erl_syntax:abstract(Mod),
-                                        erl_syntax:abstract(F),
-                                        erl_syntax:list(Args)])]),
-             [erl_syntax:clause([erl_syntax:atom(undefined)],
-                                none,
-                                [mk_call(erlang, error,
-                                         [erl_syntax:atom(undef)])]),
-              erl_syntax:clause([erl_syntax:variable('ActionFun')],
-                                none,
-                                [mk_call('ActionFun', Args)])])],
-    erl_syntax:function(
-      erl_syntax:abstract(F),
-      [erl_syntax:clause(Args, none, Body)]).
+    %% It is many times faster than constructing a number of functions,
+    %% each containing the inner case expression, though.
+    func_from_str_fmt(
+      "'$handle_undefined_function'(FnName, Args) ->
+           case lists:member({FnName, length(Args)}, ~p) of
+               true ->
+                   case mockgyver:reg_call_and_get_action({~p,FnName,Args}) of
+                       undefined ->
+                           ~s;
+                       ActionFun ->
+                           apply(ActionFun, Args)
+                   end;
+               false ->
+                   error_handler:raise_undef_exception(~p, FnName, Args)
+           end.",
+      [ExportedFAs, Mod, FmtNoAction("FnName", "Args"), Mod]).
+
+func_from_str_fmt(FmtStr, Args) ->
+    S = lists:flatten(io_lib:format(FmtStr ++ "\n", Args)),
+    {ok, Tokens, _} = erl_scan:string(S),
+    {ok, Form} = erl_parse:parse_form(Tokens),
+    Form.
 
 mk_mod(Mod, FuncForms) ->
     Forms0 = ([erl_syntax:attribute(erl_syntax:abstract(module),
@@ -1572,20 +1546,6 @@ mk_mod(Mod, FuncForms) ->
     %%          [[erl_pp:form(Form) || Form <- Forms]]),
     {ok, Mod, Bin} = compile:forms(Forms, [report, export_all]),
     {Mod, Bin}.
-
-mk_call(FunVar, As) ->
-    erl_syntax:application(erl_syntax:variable(FunVar), As).
-
-mk_call(M, F, As) ->
-    erl_syntax:application(erl_syntax:abstract(M), erl_syntax:abstract(F), As).
-
-mk_args(0) ->
-    [];
-mk_args(N) ->
-    [mk_arg(N) | mk_args(N-1)].
-
-mk_arg(N) ->
-    erl_syntax:variable(list_to_atom("A"++integer_to_list(N))).
 
 restore_mods(Modinfos) ->
     %% To speed things up for next session (commonly next eunit test),
