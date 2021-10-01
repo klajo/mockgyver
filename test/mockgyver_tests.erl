@@ -640,6 +640,19 @@ renamed_gets_called_when_mocked_mod_called_between_sn_elems_aux2() ->
     ok = mockgyver:end_session(),
     ok.
 
+backwards_compat_test_() ->
+    %% If a build system would not detect that test beams needs
+    %% to be recompiled, they would call exec/3 like this.
+    ?WITH_FUN(fun(_) ->
+                      mockgyver:exec([], [], fun backwards_compat_aux/0)
+              end,
+              ?PER_TC_TIMEOUT,
+              ?PER_TC_TIMEOUT,
+              [x]).
+
+backwards_compat_aux() ->
+    ok.
+
 with_tmp_app_env(Var, Val, F) ->
     Orig = application:get_env(mockgyver, Var),
     application:set_env(mockgyver, Var, Val),

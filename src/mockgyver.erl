@@ -347,7 +347,8 @@
 -compile({parse_transform, parse_trans_codegen}).
 
 %% API
--export([exec/2]).
+-export([exec/2,
+         exec/3]).
 
 -export([start_link/0]).
 -export([stop/0]).
@@ -489,6 +490,12 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+%% @private
+%% For backwards compatibility
+-spec exec([mfa()], [mfa()], fun(() -> Ret)) -> Ret.
+exec(MockMFAs, WatchMFAs, Fun) ->
+    exec({MockMFAs, WatchMFAs}, Fun).
 
 %% @private
 -spec exec(session_params(), fun(() -> Ret)) -> Ret.
