@@ -1498,7 +1498,7 @@ mk_mocking_mod(Mod, RenamedMod, ExportedFAs) ->
         fun(FnName, Args) ->
                 f("apply(~p, ~s, ~s)", [RenamedMod, FnName, Args])
         end,
-    mk_mod(Mod, [mk_handle_undefined_function(Mod, ExportedFAs, FmtNoAction)]).
+    mk_mod(Mod, mk_mock_impl_functions(Mod, ExportedFAs, FmtNoAction)).
 
 mk_new_mod(Mod, ExportedFAs) ->
     FmtNoAction =
@@ -1506,7 +1506,13 @@ mk_new_mod(Mod, ExportedFAs) ->
                 f("error_handler:raise_undef_exception(~p, ~s, ~s)",
                   [Mod, FnName, Args])
         end,
-    mk_mod(Mod, [mk_handle_undefined_function(Mod, ExportedFAs, FmtNoAction)]).
+    mk_mod(Mod, mk_mock_impl_functions(Mod, ExportedFAs, FmtNoAction)).
+
+mk_mock_impl_functions(Mod, ExportedFAs, FmtNoAction) ->
+    [mk_handle_undefined_function(Mod, ExportedFAs, FmtNoAction),
+     mk_fun_to_mf_function(),
+     mk_filter_st_function(Mod),
+     mk_map_st_function()].
 
 mk_handle_undefined_function(Mod, ExportedFAs, FmtNoAction) ->
     %% Parsing the string is approx 20% slower than constructing
@@ -1517,18 +1523,89 @@ mk_handle_undefined_function(Mod, ExportedFAs, FmtNoAction) ->
     %% each containing the inner case expression, though.
     func_from_str_fmt(
       "'$handle_undefined_function'(FnName, Args) ->
-           case lists:member({FnName, length(Args)}, ~p) of
+           Arity = length(Args),
+           case lists:member({FnName, Arity}, ~p) of
                true ->
                    case mockgyver:reg_call_and_get_action({~p,FnName,Args}) of
                        undefined ->
                            ~s;
                        ActionFun ->
-                           apply(ActionFun, Args)
+                           try
+                               apply(ActionFun, Args)
+                           catch
+                               Class:Reason:St0 ->
+                                   FromMF = '$mockgyver_fun_to_mf'(ActionFun),
+                                   ToMF = {~p, FnName},
+                                   St1 = '$mockgyver_filter_st'(St0),
+                                   St = '$mockgyver_map_st'(
+                                            FromMF, ToMF, Arity, St1),
+                                   erlang:raise(Class, Reason, St)
+                           end
                    end;
                false ->
                    error_handler:raise_undef_exception(~p, FnName, Args)
            end.",
-      [ExportedFAs, Mod, FmtNoAction("FnName", "Args"), Mod]).
+      [ExportedFAs, Mod, FmtNoAction("FnName", "Args"), Mod, Mod]).
+
+mk_fun_to_mf_function() ->
+    func_from_str_fmt(
+      "'$mockgyver_fun_to_mf'(ActionFun) ->
+           {module, M} = erlang:fun_info(ActionFun, module),
+           {name, F} = erlang:fun_info(ActionFun, name),
+           {M, F}.",
+      []).
+
+mk_filter_st_function(Mod) ->
+    func_from_str_fmt(
+      "'$mockgyver_filter_st'(Stacktrace) ->
+           lists:filter(
+             fun({~p, '$handle_undefined_function', _Arity, _Extra}) ->
+                     false;
+                (_) ->
+                     true
+             end,
+             Stacktrace).",
+      [Mod]).
+
+%% Ensure a stacktrace like the following contains the mocked module
+%% and function, instead of an internal fun that the user was not
+%% involved in creating.
+%%
+%% Test code:
+%%
+%%     ?WHEN(mockgyver_dummy:return_arg(N) -> error(foo)),
+%%     mockgyver_dummy:return_arg(1),
+%%
+%% Before:
+%%
+%%      Failure/Error: {error,function_clause,
+%%                         [{mockgyver_tests,
+%%                              '-some_test/1-fun-0-',
+%%                              [-1],
+%%                              [...]},
+%%                          ...
+%%
+%% After:
+%%
+%%      Failure/Error: {error,function_clause,
+%%                         [{mockgyver_dummy,
+%%                              return_arg,
+%%                              [-1],
+%%                              [...]},
+%%                          ...
+mk_map_st_function() ->
+    func_from_str_fmt(
+      "'$mockgyver_map_st'({FromM, FromF}, {ToM, ToF}, Arity, Stacktrace) ->
+           lists:map(fun({M, F, A, Extra})
+                           when M == FromM andalso
+                                F == FromF andalso
+                                (A == Arity orelse (length(A) == Arity)) ->
+                             {ToM, ToF, A, Extra};
+                        (StElem) ->
+                             StElem
+                     end,
+                     Stacktrace).",
+      []).
 
 func_from_str_fmt(FmtStr, Args) ->
     S = lists:flatten(io_lib:format(FmtStr ++ "\n", Args)),

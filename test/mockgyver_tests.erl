@@ -453,6 +453,66 @@ returns_error_on_trying_to_get_mock_info_when_not_mocking_test() ->
     ?assertError(mocking_not_started,
                  mockgyver:reg_call_and_get_action({mockgyver_dummy, return_arg, [1]})).
 
+includes_mocked_mfa_in_stacktrace_on_error_test(_) ->
+    ?WHEN(mockgyver_dummy:return_arg(_) -> error(bar)),
+    try
+        mockgyver_dummy:return_arg(foo)
+    catch
+        error:bar:StackTrace ->
+            [{mockgyver_dummy, return_arg, 1, _},
+             {?MODULE, ?FUNCTION_NAME, 1, _} | _] = StackTrace
+    end.
+
+includes_mocked_mfa_in_stacktrace_on_throw_test(_) ->
+    ?WHEN(mockgyver_dummy:return_arg(_) -> throw(bar)),
+    try
+        mockgyver_dummy:return_arg(foo)
+    catch
+        throw:bar:StackTrace ->
+            [{mockgyver_dummy, return_arg, 1, _},
+             {?MODULE, ?FUNCTION_NAME, 1, _} | _] = StackTrace
+    end.
+
+includes_mocked_mfa_in_stacktrace_on_exit_test(_) ->
+    ?WHEN(mockgyver_dummy:return_arg(_) -> exit(bar)),
+    try
+        mockgyver_dummy:return_arg(foo)
+    catch
+        exit:bar:StackTrace ->
+            [{mockgyver_dummy, return_arg, 1, _},
+             {?MODULE, ?FUNCTION_NAME, 1, _} | _] = StackTrace
+    end.
+
+includes_mocked_mfa_in_stacktrace_on_function_clause_test(_) ->
+    ?WHEN(mockgyver_dummy:return_arg(1) -> a),
+    try
+        mockgyver_dummy:return_arg(-1)
+    catch
+        error:function_clause:StackTrace ->
+            [{mockgyver_dummy, return_arg, [-1], _},
+             {?MODULE, ?FUNCTION_NAME, 1, _} | _] = StackTrace
+    end.
+
+keeps_3_tuple_stacktrace_elems_on_error_test(_) ->
+    ok = compile_load_txt_forms(
+           mockgyver_dummy7,
+           ["-module(mockgyver_dummy7).\n",
+            "-export([have_fun/0]).\n",
+            "have_fun() -> fun() -> error(foo) end.\n"]),
+    Fun = mockgyver_dummy7:have_fun(),
+    code:purge(mockgyver_dummy7),
+    true = code:delete(mockgyver_dummy7),
+    code:purge(mockgyver_dummy7),
+    false = code:is_loaded(mockgyver_dummy7),
+    ?WHEN(mockgyver_dummy:return_arg(_) -> Fun()),
+    try
+        mockgyver_dummy:return_arg(foo)
+    catch
+        error:undef:StackTrace ->
+            [{Fun, [], _},
+             {?MODULE, ?FUNCTION_NAME, 1, _} | _] = StackTrace
+    end.
+
 %% Ensure that trace on lists:reverse has been enabled at least once
 %% so we can test that it has been removed in
 %% 'removes_trace_pattern_test'.
