@@ -2,7 +2,7 @@
 {application,
  mockgyver,
  [{description,"Mocking library"},
-  {vsn,"1.5.0"},
+  {vsn,"1.6.0"},
   {registered,[]},
   {mod, {mockgyver_app, []}},
   {applications,[kernel, stdlib]},
