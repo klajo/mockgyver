@@ -213,7 +213,7 @@ Will crash with an error if the criteria isn't fulfilled.
 
 * `?WAIT_CALLED`: Same as `?WAS_CALLED`, with a twist: waits for
 the criteria to be fulfilled which can be useful for
-asynchrounous procedures.
+asynchronous procedures.
 
 * `?GET_CALLS`: Return a list of argument lists (just like
 `?WAS_CALLED` or `?WAIT_CALLED`) without checking any criteria.

@@ -189,7 +189,7 @@
 %%%       Will crash with an error if the criteria isn't fulfilled.</li>
 %%%   <li>`?WAIT_CALLED': Same as `?WAS_CALLED', with a twist: waits for
 %%%       the criteria to be fulfilled which can be useful for
-%%%       asynchrounous procedures.</li>
+%%%       asynchronous procedures.</li>
 %%%   <li>`?GET_CALLS': Return a list of argument lists (just like
 %%%       `?WAS_CALLED' or `?WAIT_CALLED') without checking any criteria.</li>
 %%%   <li>`?NUM_CALLS': Return the number of calls to a function.</li>
@@ -1681,7 +1681,7 @@ calc_levenshtein_dist(S, T) ->
     calc_levenshtein_dist_t(S, T, lists:seq(0, length(S)), 0).
 
 %% Loop over the target string and calculate rows in the tables you'll
-%% find on web pages which describe the algoritm.  S is the source
+%% find on web pages which describe the algorithm.  S is the source
 %% string, T the target string, Ds0 is the list of distances for the
 %% previous row and J is the base for the leftmost column.
 calc_levenshtein_dist_t(S, [_|TT]=T, Ds0, J) ->
@@ -1692,7 +1692,7 @@ calc_levenshtein_dist_t(_S, [], Ds, _J) ->
 
 %% Loop over the source string and calculate the columns for a
 %% specific row in the tables you'll find on web pages which describe
-%% the algoritm.
+%% the algorithm.
 calc_levenshtein_dist_s([SH|ST], [TH|_]=T, [DH|DT], AccDs, PrevD) ->
     NextD = if SH==TH -> DH;
                true   -> lists:min([PrevD+1,  % deletion
@@ -1752,7 +1752,7 @@ f(Format, Args) ->
 %% own in a statement (like the sole return value).  But if it's
 %% embedded for example within a tuple or list with only constant
 %% values, it's added to the constant pool which is a separate chunk
-%% within the beam file.  The current code doesn't replace occurences
+%% within the beam file.  The current code doesn't replace occurrences
 %% within the constant pool.  Although possible, I'll leave that for
 %% later. :-)
 %%
@@ -1802,7 +1802,7 @@ f(Format, Args) ->
 %%          or    'AtU8'  chunk ID
 %%     4 bytes    size    total chunk length
 %%     4 bytes    n       number of atoms
-%%     xx bytes   ...     Atoms. Each atom is a string preceeded
+%%     xx bytes   ...     Atoms. Each atom is a string preceded
 %%                        by the length in a byte, encoded
 %%                        in latin1 (if chunk ID == 'Atom') or
 %%                        or UTF-8 (if chunk ID == 'AtU8')
