@@ -1511,7 +1511,8 @@ mk_new_mod(Mod, ExportedFAs) ->
 mk_mock_impl_functions(Mod, ExportedFAs, FmtNoAction) ->
     [mk_handle_undefined_function(Mod, ExportedFAs, FmtNoAction),
      mk_externalize_stack_trace_function(Mod),
-     mk_fun_to_mf_function(),
+     mk_fun_to_inlined_function(),
+     mk_fun_to_inlined_r_function(),
      mk_filter_st_function(Mod),
      mk_map_st_function()].
 
@@ -1553,20 +1554,39 @@ mk_externalize_stack_trace_function(Mod) ->
     %%
     %% - Make the stacktrace refer to the mocked functions instead of
     %%   the anonymous fun expression that the parse transform introduces.
+    %%
+    %%   In Erlang 25+, the '-x/1-fun-0-' is sometimes '-x/1-inlined-0-' in
+    %%   stacktraces, so handle both.
     func_from_str_fmt(
       "'$mockgyver_externalize_stacktrace'(ActionFun, FnName, Arity, St0) ->
-           FromMF = '$mockgyver_fun_to_mf'(ActionFun),
+           {module, FromM} = erlang:fun_info(ActionFun, module),
+           {name, FromF} = erlang:fun_info(ActionFun, name),
+           FromMF1 = {FromM, FromF},
+           FromMF2 = {FromM, '$fun_to_inlined'(FromF)},
            ToMF = {~p, FnName},
            St1 = '$mockgyver_filter_st'(St0),
-           '$mockgyver_map_st'(FromMF, ToMF, Arity, St1).",
+           St = '$mockgyver_map_st'(FromMF1, ToMF, Arity, St1),
+           '$mockgyver_map_st'(FromMF2, ToMF, Arity, St).",
       [Mod]).
 
-mk_fun_to_mf_function() ->
+mk_fun_to_inlined_function() ->
     func_from_str_fmt(
-      "'$mockgyver_fun_to_mf'(ActionFun) ->
-           {module, M} = erlang:fun_info(ActionFun, module),
-           {name, F} = erlang:fun_info(ActionFun, name),
-           {M, F}.",
+      %% Process reversed strings, to make sure we only substitute
+      %% the last occurrence. In case it would be lexically nested.
+      "'$fun_to_inlined'(FnName) ->
+           list_to_atom(
+             lists:reverse(
+               '$fun_to_inlined_r'(
+                 lists:reverse(
+                   atom_to_list(FnName))))).",
+      []).
+mk_fun_to_inlined_r_function() ->
+    func_from_str_fmt(
+      %% Processing reversed string:
+      %%                      fun                inlined
+      "'$fun_to_inlined_r'(\"-nuf-\" ++ T) -> \"-denilni-\" ++ T;
+       '$fun_to_inlined_r'([C | T])        -> [C | '$fun_to_inlined_r'(T)];
+       '$fun_to_inlined_r'(\"\")           -> \"\".",
       []).
 
 mk_filter_st_function(Mod) ->
