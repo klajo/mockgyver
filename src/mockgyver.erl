@@ -639,8 +639,7 @@ init({}) ->
 -spec no_session(EventType :: gen_statem:event_type(),
                  EventContent :: term(),
                  State :: #state{}) ->
-                        gen_statem:event_handler_result(
-                          gen_statem:state_name()).
+                        gen_statem:event_handler_result(state_name()).
 no_session({call, From}, {start_session, MockMFAs, WatchMFAs, Pid}, State0) ->
     {Reply, State} = i_start_session(MockMFAs, WatchMFAs, Pid, State0),
     {next_state, session, State, {reply, From, Reply}};
@@ -655,8 +654,7 @@ no_session(EventType, Event, State) ->
 -spec session(EventType :: gen_statem:event_type(),
               EventContent :: term(),
               State :: #state{}) ->
-                     gen_statem:event_handler_result(
-                       gen_statem:state_name()).
+                     gen_statem:event_handler_result(state_name()).
 session({call, From}, {start_session, MockMFAs, WatchMFAs, Pid}, State0) ->
     State = enqueue_session({From, MockMFAs, WatchMFAs, Pid}, State0),
     {keep_state, State};
@@ -785,7 +783,7 @@ possibly_dequeue_session(#state{session_waiters=Waiters0}=State0) ->
     case queue:out(Waiters0) of
         {{value, {From, MockMFAs, WatchMFAs, Pid}}, Waiters} ->
             {Reply, State} = i_start_session(MockMFAs, WatchMFAs, Pid, State0),
-            gen_server:reply(From, Reply),
+            gen_statem:reply(From, Reply),
             State#state{session_waiters=Waiters};
         {empty, _} ->
             State0
@@ -938,7 +936,7 @@ calc_atom_resemblance(A1, A2) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec terminate(Reason :: term(),
-                StateName :: gen_statem:state_name(),
+                StateName :: state_name(),
                 State :: #state{}) -> term().
 terminate(_Reason, _StateName, State) ->
     i_end_session(State), % ensure mock modules are unloaded when terminating
@@ -952,11 +950,11 @@ terminate(_Reason, _StateName, State) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec code_change(OldVsn :: term(),
-                  StateName :: gen_statem:state_name(),
+                  StateName :: state_name(),
                   State :: #state{},
                   Extra :: term()) ->
                          {ok,
-                          NewStateName :: gen_statem:state_name(),
+                          NewStateName :: state_name(),
                           NewState :: #state{}} |
                          term().
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -1111,7 +1109,7 @@ possibly_notify_waiters(#state{call_waiters=Waiters0} = State) ->
         lists:filter(fun(#call_waiter{from=From, mfa=MFA, crit=Criteria}) ->
                              case get_and_check_matches(MFA, Criteria, State) of
                                  {ok, _} = Reply ->
-                                     gen_server:reply(From, Reply),
+                                     gen_statem:reply(From, Reply),
                                      false; % remove from waiting list
                                  {error, _} ->
                                      true   % keep in waiting list
