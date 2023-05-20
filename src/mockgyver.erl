@@ -1510,6 +1510,7 @@ mk_new_mod(Mod, ExportedFAs) ->
 
 mk_mock_impl_functions(Mod, ExportedFAs, FmtNoAction) ->
     [mk_handle_undefined_function(Mod, ExportedFAs, FmtNoAction),
+     mk_externalize_stack_trace_function(Mod),
      mk_fun_to_mf_function(),
      mk_filter_st_function(Mod),
      mk_map_st_function()].
@@ -1534,18 +1535,31 @@ mk_handle_undefined_function(Mod, ExportedFAs, FmtNoAction) ->
                                apply(ActionFun, Args)
                            catch
                                Class:Reason:St0 ->
-                                   FromMF = '$mockgyver_fun_to_mf'(ActionFun),
-                                   ToMF = {~p, FnName},
-                                   St1 = '$mockgyver_filter_st'(St0),
-                                   St = '$mockgyver_map_st'(
-                                            FromMF, ToMF, Arity, St1),
+                                   St = '$mockgyver_externalize_stacktrace'(
+                                            ActionFun, FnName, Arity, St0),
                                    erlang:raise(Class, Reason, St)
                            end
                    end;
                false ->
                    error_handler:raise_undef_exception(~p, FnName, Args)
            end.",
-      [ExportedFAs, Mod, FmtNoAction("FnName", "Args"), Mod, Mod]).
+      [ExportedFAs, Mod, FmtNoAction("FnName", "Args"), Mod]).
+
+mk_externalize_stack_trace_function(Mod) ->
+    %% In case of an error, fixup the stacktrace
+    %% so that it looks like something the user can relate to.
+    %%
+    %% - Remove the internal '$handle_undefined_function' wrapper level.
+    %%
+    %% - Make the stacktrace refer to the mocked functions instead of
+    %%   the anonymous fun expression that the parse transform introduces.
+    func_from_str_fmt(
+      "'$mockgyver_externalize_stacktrace'(ActionFun, FnName, Arity, St0) ->
+           FromMF = '$mockgyver_fun_to_mf'(ActionFun),
+           ToMF = {~p, FnName},
+           St1 = '$mockgyver_filter_st'(St0),
+           '$mockgyver_map_st'(FromMF, ToMF, Arity, St1).",
+      [Mod]).
 
 mk_fun_to_mf_function() ->
     func_from_str_fmt(
